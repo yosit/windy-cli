@@ -9,7 +9,18 @@ import {
   OUTPUT_FORMAT_CHOICES,
   type OutputFormat,
 } from './formatters';
-import { POINT_MODELS, AIR_QUALITY_MODELS, MODEL_CATALOG, PREMIUM_FEATURES } from './types';
+import {
+  POINT_MODELS,
+  AIR_QUALITY_MODELS,
+  MODEL_CATALOG,
+  PREMIUM_FEATURES,
+  OVERLAYS,
+  LEVELS,
+  LEVEL_ALTITUDE,
+  BASEMAP_STYLES,
+  SUPPORTED_LANGUAGES,
+  type BasemapStyle,
+} from './types';
 
 let globalFormat: OutputFormat = DEFAULT_OUTPUT_FORMAT;
 
@@ -261,6 +272,95 @@ export function buildProgram(): Command {
       withClient((c) => c.modelManifest(model ?? 'ecmwf-hres', opts.premium)),
     );
 
+  forecast
+    .command('sounding <lat,lon>')
+    .description(
+      'Pressure-level sounding (skew-T data) for 17 atmospheric levels (`surface`..`10h`). ' +
+        'Pivoted from the meteogram response: each timestep has temp/dewpoint/rh/gh/wind at each level.',
+    )
+    .option('-m, --model <name>', 'forecast model', 'ecmwf')
+    .option('--ref-time <iso>', 'override model reference time')
+    .option('--step <hours>', 'sample interval')
+    .option('--at <hour-offset>', 'extract only the given forecast hour (integer ≥ 0)')
+    .action((latlon, opts) =>
+      withClient(async (c) => {
+        const [lat, lon] = parseLatLon(latlon);
+        const s = await c.sounding(lat, lon, {
+          model: opts.model,
+          refTime: opts.refTime,
+          step: opts.step ? Number(opts.step) : undefined,
+        });
+        if (opts.at !== undefined) {
+          const idx = Number(opts.at);
+          const ts = s.timesteps.find((t) => t.hoursOffset === idx) ?? s.timesteps[0];
+          return { ...s, timesteps: [ts] };
+        }
+        return s;
+      }),
+    );
+
+  // ── Reference data (no API call) ─────────────────────────────────────────
+
+  program
+    .command('overlays')
+    .description('List all 66 renderable weather overlays.')
+    .action(() => out([...OVERLAYS]));
+
+  program
+    .command('levels')
+    .description('List the 17 atmospheric levels with their altitudes and flight levels.')
+    .action(() =>
+      out(
+        (LEVELS as readonly (keyof typeof LEVEL_ALTITUDE)[]).map((l) => ({
+          level: l,
+          ...LEVEL_ALTITUDE[l],
+        })),
+      ),
+    );
+
+  program
+    .command('basemaps')
+    .description('List supported basemap styles.')
+    .action(() => out([...BASEMAP_STYLES]));
+
+  program
+    .command('languages')
+    .description('List supported UI / label languages.')
+    .action(() => out([...SUPPORTED_LANGUAGES]));
+
+  // ── Tile URL builders ────────────────────────────────────────────────────
+
+  const tile = program.command('tile').description('Tile URL builders (no API call).');
+
+  tile
+    .command('data <model> <run> <forecastHour> <overlay> <z> <x> <y>')
+    .description(
+      'Build a URL for a pre-rendered weather data tile on ims.windy.com. ' +
+        'Run/forecastHour are YYYYMMDDHH. Get valid values from `windy radar info` or `windy forecast manifest`.',
+    )
+    .option('--ext <kind>', 'jpg|png', 'jpg')
+    .action((model, run, hour, overlay, z, x, y, opts) => {
+      const c = WindyClient.fromEnv();
+      out(c.dataTileUrl(model, run, hour, overlay, Number(z), Number(x), Number(y), opts.ext));
+    });
+
+  tile
+    .command('basemap <style> <z> <x> <y>')
+    .description('Build a URL for a basemap tile.')
+    .action((style, z, x, y) => {
+      const c = WindyClient.fromEnv();
+      out(c.basemapTileUrl(style as BasemapStyle, Number(z), Number(x), Number(y)));
+    });
+
+  tile
+    .command('labels <z> <x> <y>')
+    .description('Build a URL for a place-label tile (vector JSON).')
+    .option('--lang <code>', 'language override')
+    .action((z, x, y, opts) => {
+      const c = WindyClient.fromEnv();
+      out(c.labelTileUrl(Number(z), Number(x), Number(y), opts.lang));
+    });
+
   // ── Search / location ────────────────────────────────────────────────────
 
   program
@@ -477,6 +577,87 @@ export function buildProgram(): Command {
     .command('ping <id>')
     .description('Webcam health/ping metrics.')
     .action((id) => withClient((c) => c.webcamPing(id)));
+  webcams
+    .command('mine')
+    .description('List webcams owned by the current user (requires login).')
+    .action(() => withClient((c) => c.myWebcams()));
+  webcams
+    .command('register')
+    .description('Register a new webcam (owner flow, requires login).')
+    .requiredOption('--title <s>')
+    .requiredOption('--at <lat,lon>')
+    .requiredOption('--image-url <url>')
+    .option('--source-url <url>', 'public webcam page')
+    .option('--description <s>')
+    .action((opts) =>
+      withClient(async (c) => {
+        const [lat, lon] = parseLatLon(opts.at);
+        return c.addWebcam({
+          title: opts.title,
+          lat,
+          lon,
+          imageUrl: opts.imageUrl,
+          sourceUrl: opts.sourceUrl,
+          description: opts.description,
+        });
+      }),
+    );
+  webcams
+    .command('remove <id>')
+    .description('Remove an owned webcam.')
+    .action((id) => withClient((c) => c.removeWebcam(id)));
+
+  // ── Push notifications ───────────────────────────────────────────────────
+
+  const push = program.command('push').description('Push notification device registration.');
+  push
+    .command('register <token>')
+    .description('Register an FCM/APNs push token for this device.')
+    .addOption(
+      new Option('--platform <kind>').choices(['web', 'ios', 'android']).default('web'),
+    )
+    .action((token, opts) =>
+      withClient((c) => c.registerPushDevice(token, opts.platform)),
+    );
+  push
+    .command('unregister')
+    .description('Remove this device from push notifications.')
+    .action(() => withClient((c) => c.unregisterPushDevice()));
+
+  // ── api.windy.com (public, commercial API) ───────────────────────────────
+
+  const api = program
+    .command('api')
+    .description('Calls to api.windy.com — the official commercial API. Requires a separate API key from https://api.windy.com/.');
+
+  api
+    .command('point <lat,lon>')
+    .description("Point Forecast via api.windy.com (uses WINDY_API_KEY env var).")
+    .requiredOption('-m, --model <name>', 'model (gfs, ecmwf, iconEu, ...)')
+    .requiredOption(
+      '-p, --parameters <list>',
+      "comma-separated, e.g. 'wind,temp,rh,pressure'",
+    )
+    .option('--levels <list>', "comma-separated, e.g. 'surface,850h,500h'")
+    .option('--key <apiKey>', 'override WINDY_API_KEY')
+    .action((latlon, opts) =>
+      withClient(async (c) => {
+        const apiKey = opts.key ?? process.env.WINDY_API_KEY;
+        if (!apiKey) die('WINDY_API_KEY env var or --key flag required for api.windy.com');
+        const [lat, lon] = parseLatLon(latlon);
+        const parameters = String(opts.parameters).split(',').map((s) => s.trim());
+        const levels = opts.levels
+          ? String(opts.levels).split(',').map((s) => s.trim() as (typeof LEVELS)[number])
+          : undefined;
+        return c.apiPointForecast(apiKey, {
+          lat,
+          lon,
+          model: opts.model,
+          parameters,
+          levels,
+        });
+      }),
+    );
 
   // ── Airport ──────────────────────────────────────────────────────────────
 

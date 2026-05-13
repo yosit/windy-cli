@@ -46,7 +46,8 @@ Forecasts, search, reverse, elevation, webcams, storms, alerts, stations, air qu
 | `windy forecast meteogram <lat,lon> [-m MODEL]` | Hourly multi-parameter timeseries |
 | `windy forecast airq <lat,lon> [-m cams\|camsEu]` | Air-quality forecast |
 | `windy forecast manifest [MODEL]` | Model availability / reftimes |
-| `windy forecast models` | List supported model identifiers |
+| `windy forecast models [--scope --domain --keys-only]` | Model catalog with premium uplift, filterable |
+| `windy forecast sounding <lat,lon> [-m MODEL --at HOUR]` | Pressure-level sounding (skew-T) — 17 levels × 6 params |
 
 Models: `ecmwf`, `gfs`, `icon`, `iconEu`, `iconD2`, `mblue`, `namConus`, `namHawaii`, `namAlaska`, `arome*`, `canHrdps`, `canRdwpsWaves`, `czeAladin`, `hrrr*`, `bomAccess*`, `ukv`, `jmaMsm`, `jmaCwmWaves`, `iconEuWaves`, `ecmwfWaves`. Premium subscribers unlock high-res regional models and the extended 15-day window (`--extended`).
 
@@ -102,8 +103,41 @@ Models: `ecmwf`, `gfs`, `icon`, `iconEu`, `iconD2`, `mblue`, `namConus`, `namHaw
 | `windy radar info` | Radar composite metadata |
 | `windy radar coverage` | Radar coverage polygon |
 | `windy radar satellite` | Satellite composite metadata |
+| `windy radar archive` | Radar archive frame range |
+| `windy radar satellite-archive` | Satellite archive frame range |
 | `windy radar image-url <radar\|satellite> <lat,lon> [-w 640 -h 360]` | URL to pre-rendered widget image |
 | `windy static-map <lat,lon> [--zoom 10 --size 640]` | URL to static map image |
+| `windy tile data <model> <run> <hour> <overlay> <z> <x> <y> [--ext jpg\|png]` | Pre-rendered weather data tile URL on ims.windy.com |
+| `windy tile basemap <style> <z> <x> <y>` | Basemap tile URL |
+| `windy tile labels <z> <x> <y> [--lang]` | Place-label tile URL |
+
+### Reference data (no API call)
+| Command | What it returns |
+|---------|-----------------|
+| `windy overlays` | All 66 renderable weather overlays |
+| `windy levels` | 17 atmospheric levels with altitude/flight level |
+| `windy basemaps` | Supported basemap styles |
+| `windy languages` | Supported UI / label languages |
+
+### Webcam owner CRUD (requires login)
+| Command | What it returns |
+|---------|-----------------|
+| `windy webcams mine` | List webcams you own |
+| `windy webcams search <q> [--near]` | Text-search all webcams |
+| `windy webcams ping <id>` | Webcam health metrics |
+| `windy webcams register --title --at --image-url [--source-url --description]` | Register a new webcam |
+| `windy webcams remove <id>` | Delete an owned webcam |
+
+### Push notifications (requires login)
+| Command | What it returns |
+|---------|-----------------|
+| `windy push register <token> [--platform web\|ios\|android]` | Register an FCM/APNs push token |
+| `windy push unregister` | Remove this device |
+
+### api.windy.com (commercial API, separate API key required)
+| Command | What it returns |
+|---------|-----------------|
+| `windy api point <lat,lon> -m MODEL -p wind,temp,rh [--levels surface,850h] [--key KEY]` | Call the official Point Forecast API — uses `WINDY_API_KEY` env var |
 
 ### User data (require login)
 | Command | What it returns |
@@ -132,6 +166,7 @@ Models: `ecmwf`, `gfs`, `icon`, `iconEu`, `iconD2`, `mblue`, `namConus`, `namHaw
 | `WINDY_TOKEN` | JWT to use directly (skip cookie bootstrap) |
 | `WINDY_ACCOUNT_SID` | `_account_sid` cookie value |
 | `WINDY_UID` | Override the device UUID |
+| `WINDY_API_KEY` | Separate api.windy.com key (only for `windy api ...` commands) |
 | `WINDY_HTTP_TIMEOUT` | HTTP request timeout in ms (default 30000) |
 | `XDG_CONFIG_HOME` | Overrides config dir (defaults to `~/.config`) |
 

@@ -8,13 +8,18 @@ import type {
   CapAlert,
   Favourite,
   FavouriteValue,
+  Level,
   LiveAlertsResponse,
   NearbyAirQualityStation,
   NearbyWeatherStation,
   ObservationTimeseries,
+  Overlay,
   PointForecast,
+  PressureLevelSample,
   ReverseGeocode,
   SearchResponse,
+  Sounding,
+  SoundingTimestep,
   StormsResponse,
   TideForecast,
   UserAlertItem,
@@ -23,7 +28,9 @@ import type {
   PointModel,
   AirQualityModel,
   StationType,
+  BasemapStyle,
 } from './types';
+import { LEVELS, LEVEL_ALTITUDE } from './types';
 import {
   decodeJWT,
   loadSession,
@@ -234,6 +241,67 @@ export class WindyClient {
     return this.request(`/forecast/airq/${model}/v1.0/${fmt(lat)}/${fmt(lon)}`, {
       qs: { refTime: opts.refTime },
     });
+  }
+
+  /**
+   * Pressure-level sounding (skew-T) — reformats the meteogram response into a
+   * clean per-timestep × per-level structure.
+   *
+   * The meteogram endpoint returns flat keys like `temp-850h`, `wind_u-500h`,
+   * etc. for 17 atmospheric levels (`surface`, `100m`, `975h`…`10h`). This
+   * method pivots them into `SoundingTimestep[]` for easy consumption.
+   */
+  async sounding(
+    lat: number,
+    lon: number,
+    opts: { model?: PointModel | string; refTime?: string; step?: number } = {},
+  ): Promise<Sounding> {
+    const model = opts.model ?? 'ecmwf';
+    const raw = (await this.meteogram(lat, lon, opts)) as {
+      header: { model: string; refTime: string; step: number; tzName?: string };
+      data: Record<string, number[] | undefined> & { hours: number[] };
+    };
+    const tsList = raw.data.hours ?? [];
+    const refMs = Date.parse(raw.header.refTime);
+    const params = ['temp', 'dewpoint', 'rh', 'gh', 'wind_u', 'wind_v'] as const;
+
+    const timesteps: SoundingTimestep[] = tsList.map((ts, i) => {
+      const levels: PressureLevelSample[] = (LEVELS as readonly Level[]).map((level) => {
+        const sample: PressureLevelSample = {
+          level,
+          altM: LEVEL_ALTITUDE[level].altM,
+          altFt: LEVEL_ALTITUDE[level].altFt,
+        };
+        for (const p of params) {
+          const arr = raw.data[`${p}-${level}`];
+          if (arr && arr[i] !== undefined) (sample as unknown as Record<string, unknown>)[p] = arr[i];
+        }
+        if (sample.wind_u !== undefined && sample.wind_v !== undefined) {
+          sample.wind = Math.hypot(sample.wind_u, sample.wind_v);
+          // meteorological FROM direction
+          sample.windDir = (Math.atan2(-sample.wind_u, -sample.wind_v) * 180) / Math.PI;
+          if (sample.windDir < 0) sample.windDir += 360;
+        }
+        return sample;
+      });
+      return {
+        ts,
+        hoursOffset: Math.round((ts - refMs) / 3_600_000),
+        levels,
+      };
+    });
+
+    return {
+      header: {
+        model: raw.header.model ?? model,
+        refTime: raw.header.refTime,
+        lat,
+        lon,
+        tzName: raw.header.tzName,
+        step: raw.header.step ?? 3,
+      },
+      timesteps,
+    };
   }
 
   /** Forecast model manifest (available reftimes, premium gating). */
@@ -504,6 +572,41 @@ export class WindyClient {
     return `https://${NODE_S_HOST}/imaker/map?${params}`;
   }
 
+  /**
+   * Direct URL to a pre-rendered weather data tile on the IMS image server.
+   * Use the radar `minifest2.json` (or the model's `minifest.json`) to find
+   * valid `run` (YYYYMMDDHH) and `forecastHour` (YYYYMMDDHH) timestamps.
+   *
+   * @param model Model identifier (e.g. `ecmwf-hres`, `gfs`)
+   * @param run Model run timestamp `YYYYMMDDHH`
+   * @param forecastHour Forecast timestamp `YYYYMMDDHH`
+   * @param overlay Overlay/layer (e.g. `wind-surface`, `temp-850h`, `rain`, `radar`)
+   * @param z,x,y Tile coordinates
+   * @param ext File extension (`jpg`, `png`)
+   */
+  dataTileUrl(
+    model: string,
+    run: string,
+    forecastHour: string,
+    overlay: Overlay | string,
+    z: number,
+    x: number,
+    y: number,
+    ext: 'jpg' | 'png' = 'jpg',
+  ): string {
+    return `https://ims.windy.com/im/v3.0/forecast/${model}/${run}/${forecastHour}/wm_grid_257/${z}/${x}/${y}/${overlay}.${ext}`;
+  }
+
+  /** Basemap tile URL. */
+  basemapTileUrl(style: BasemapStyle, z: number, x: number, y: number): string {
+    return `https://tiles.windy.com/tiles/v11.2/${style}/${z}/${x}/${y}.png`;
+  }
+
+  /** Place-label tile URL (vector labels). */
+  labelTileUrl(z: number, x: number, y: number, lang?: string): string {
+    return `https://tiles.windy.com/labels/v2.0/${lang ?? this.lang}/${z}/${x}/${y}.json`;
+  }
+
   // ── Airports ───────────────────────────────────────────────────────────
 
   /**
@@ -663,6 +766,128 @@ export class WindyClient {
   async userDevice(): Promise<unknown> {
     this.requireAuthed('userDevice');
     return this.request(`/users/v3/devices/${this.session.uid}`);
+  }
+
+  /**
+   * Register / refresh this device for push notifications.
+   * @param token FCM (Android/web) or APNs (iOS) push token
+   * @param platform `web` | `ios` | `android`
+   */
+  async registerPushDevice(
+    token: string,
+    platform: 'web' | 'ios' | 'android' = 'web',
+  ): Promise<unknown> {
+    this.requireAuthed('registerPushDevice');
+    return this.request(`/users/v3/devices/${this.session.uid}`, {
+      method: 'POST',
+      body: {
+        token,
+        platform,
+        lang: this.lang,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      },
+    });
+  }
+
+  /** Unregister a push notification device. */
+  async unregisterPushDevice(): Promise<unknown> {
+    this.requireAuthed('unregisterPushDevice');
+    return this.request(`/users/v3/devices/${this.session.uid}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // ── Webcam owner CRUD ─────────────────────────────────────────────────
+
+  /**
+   * List webcams owned by the current user.
+   * Uses the admin endpoint — requires the user to have webcams registered.
+   */
+  async myWebcams(): Promise<unknown> {
+    this.requireAuthed('myWebcams');
+    return this.request('https://admin.windy.com/webcams/admin/v1.0/my-webcams', {
+      skipEnvelope: true,
+      bearer: true,
+    });
+  }
+
+  /** Register a new webcam (owner flow). */
+  async addWebcam(payload: {
+    title: string;
+    lat: number;
+    lon: number;
+    imageUrl: string;
+    sourceUrl?: string;
+    description?: string;
+    [k: string]: unknown;
+  }): Promise<unknown> {
+    this.requireAuthed('addWebcam');
+    return this.request('https://admin.windy.com/webcams/admin/v1.0/webcams', {
+      method: 'POST',
+      body: payload,
+      skipEnvelope: true,
+      bearer: true,
+    });
+  }
+
+  /** Update a webcam. */
+  async updateWebcam(id: number | string, patch: Record<string, unknown>): Promise<unknown> {
+    this.requireAuthed('updateWebcam');
+    return this.request(`https://admin.windy.com/webcams/admin/v1.0/webcams/${id}`, {
+      method: 'PUT',
+      body: patch,
+      skipEnvelope: true,
+      bearer: true,
+    });
+  }
+
+  /** Remove a webcam. */
+  async removeWebcam(id: number | string): Promise<unknown> {
+    this.requireAuthed('removeWebcam');
+    return this.request(`https://admin.windy.com/webcams/admin/v1.0/webcams/${id}`, {
+      method: 'DELETE',
+      skipEnvelope: true,
+      bearer: true,
+    });
+  }
+
+  // ── api.windy.com Point Forecast API ──────────────────────────────────
+
+  /**
+   * Call the official commercial Point Forecast API at api.windy.com.
+   * Requires a separate API key from https://api.windy.com/ (free tier ~500 calls/day).
+   *
+   * Different auth model from the web-app endpoints — uses an API key in the body.
+   * @param apiKey Windy API key (separate from your web subscription)
+   * @param opts Point + model + parameters
+   */
+  async apiPointForecast(
+    apiKey: string,
+    opts: {
+      lat: number;
+      lon: number;
+      model: PointModel | string;
+      /** Parameters to return — e.g. `['wind', 'temp', 'rh']`. */
+      parameters: string[];
+      /** Pressure-level filter — e.g. `['surface', '850h']`. */
+      levels?: Level[];
+      /** Pre-canned key list bundle ID. */
+      key?: string;
+    },
+  ): Promise<unknown> {
+    return this.request('https://api.windy.com/api/point-forecast/v2', {
+      method: 'POST',
+      body: {
+        lat: opts.lat,
+        lon: opts.lon,
+        model: opts.model,
+        parameters: opts.parameters,
+        levels: opts.levels,
+        key: apiKey,
+      },
+      auth: false,
+      skipEnvelope: true,
+    });
   }
 
   // ── Misc ───────────────────────────────────────────────────────────────

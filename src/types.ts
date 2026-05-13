@@ -605,6 +605,131 @@ export type AirQualityModel = (typeof AIR_QUALITY_MODELS)[number];
 export const POI_TYPES = ['airq', 'stations', 'tides', 'webcams'] as const;
 export type PoiType = (typeof POI_TYPES)[number];
 
+/** Renderable weather overlays (66) — used as the layer query in IMS tile URLs. */
+export const OVERLAYS = [
+  // Wind / temperature / humidity
+  'wind', 'temp', 'wetbulbtemp', 'dewpoint', 'gust', 'gustAccu', 'rh',
+  // Precipitation / clouds
+  'rain', 'rainAccu', 'snowAccu', 'snowcover', 'ptype',
+  'clouds', 'lclouds', 'mclouds', 'hclouds', 'cloudtop', 'ccl', 'cbase',
+  // Stability / convection
+  'cape', 'thunder', 'deg0', 'turbulence', 'icing',
+  // Pressure
+  'pressure',
+  // Solar / UV
+  'solarpower', 'uvindex',
+  // Waves / ocean
+  'waves', 'wwaves', 'wavePower', 'swell', 'swell1', 'swell2', 'swell3',
+  'currents', 'currentsTide', 'sst', 'visibility', 'fog',
+  // Air quality (CAMS)
+  'gtco3', 'pm2p5', 'no2', 'aod550', 'tcso2', 'go3', 'cosc', 'dustsm', 'aqi',
+  // Imagery / composite layers
+  'radar', 'satellite', 'topoMap', 'heatmaps',
+  // Overlays sourced from external products
+  'capAlerts', 'avalancheDanger', 'hurricanes',
+  // ECMWF Extreme Forecast Index
+  'efiWind', 'efiTemp', 'efiRain',
+  // Drought / soil / fire (CzechGlobe)
+  'moistureAnom40', 'moistureAnom100',
+  'drought40', 'drought100',
+  'soilMoisture40', 'soilMoisture100',
+  'fwi', 'dfm10h',
+] as const;
+export type Overlay = (typeof OVERLAYS)[number];
+
+/** Atmospheric levels supported by the meteogram pressure-level keys. */
+export const LEVELS = [
+  'surface', '100m',
+  '975h', '950h', '925h', '900h', '850h', '800h',
+  '700h', '600h', '500h', '400h', '300h', '250h',
+  '200h', '150h', '10h',
+] as const;
+export type Level = (typeof LEVELS)[number];
+
+/** Approximate altitude / flight level for each pressure surface. */
+export const LEVEL_ALTITUDE: Record<Level, { hPa?: string; altM: number; altFt: number; flightLevel?: string }> = {
+  surface: { altM: 0, altFt: 0 },
+  '100m':  { altM: 100, altFt: 330 },
+  '975h':  { hPa: '975 hPa', altM: 300, altFt: 1000 },
+  '950h':  { hPa: '950 hPa', altM: 600, altFt: 2000 },
+  '925h':  { hPa: '925 hPa', altM: 750, altFt: 2500 },
+  '900h':  { hPa: '900 hPa', altM: 900, altFt: 3000 },
+  '850h':  { hPa: '850 hPa', altM: 1500, altFt: 5000 },
+  '800h':  { hPa: '800 hPa', altM: 2000, altFt: 6400 },
+  '700h':  { hPa: '700 hPa', altM: 3000, altFt: 10000, flightLevel: 'FL100' },
+  '600h':  { hPa: '600 hPa', altM: 4200, altFt: 14000, flightLevel: 'FL140' },
+  '500h':  { hPa: '500 hPa', altM: 5500, altFt: 18000, flightLevel: 'FL180' },
+  '400h':  { hPa: '400 hPa', altM: 7000, altFt: 24000, flightLevel: 'FL240' },
+  '300h':  { hPa: '300 hPa', altM: 9000, altFt: 30000, flightLevel: 'FL300' },
+  '250h':  { hPa: '250 hPa', altM: 10000, altFt: 34000, flightLevel: 'FL340' },
+  '200h':  { hPa: '200 hPa', altM: 11700, altFt: 39000, flightLevel: 'FL390' },
+  '150h':  { hPa: '150 hPa', altM: 13500, altFt: 45000, flightLevel: 'FL450' },
+  '10h':   { hPa: '10 hPa', altM: 30000, altFt: 98000, flightLevel: 'FL980' },
+};
+
+/** Basemap styles served by `tiles.windy.com/tiles/v11.2/{style}`. */
+export const BASEMAP_STYLES = [
+  'darkmap', 'darkmap-retina',
+  'lightmap', 'lightmap-retina',
+  'sat', 'sat-retina',
+  'winter', 'winter-retina',
+  'topomap', 'topomap-retina',
+] as const;
+export type BasemapStyle = (typeof BASEMAP_STYLES)[number];
+
+/** UI/label languages supported by Windy (captured from W.rootScope.supportedLanguages). */
+export const SUPPORTED_LANGUAGES = [
+  'en', 'zh-TW', 'zh', 'ja', 'fr', 'ko', 'it', 'ru', 'nl', 'cs', 'tr', 'pl',
+  'sv', 'fi', 'ro', 'el', 'hu', 'hr', 'ca', 'da', 'ar', 'fa', 'hi', 'ta',
+  'sk', 'uk', 'bg', 'he', 'is', 'lt', 'et', 'vi', 'sl', 'sr', 'id', 'th',
+  'sq', 'pt', 'nb', 'es', 'de', 'bn',
+] as const;
+export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
+
+// ── Sounding (pressure-level meteogram) ──────────────────────────────────
+
+export interface PressureLevelSample {
+  level: Level;
+  altM: number;
+  altFt: number;
+  /** Kelvin */
+  temp?: number;
+  /** Kelvin */
+  dewpoint?: number;
+  /** percent */
+  rh?: number;
+  /** geopotential height in meters */
+  gh?: number;
+  /** m/s zonal */
+  wind_u?: number;
+  /** m/s meridional */
+  wind_v?: number;
+  /** m/s magnitude */
+  wind?: number;
+  /** meteorological degrees */
+  windDir?: number;
+}
+
+export interface SoundingTimestep {
+  /** unix ms */
+  ts: number;
+  /** Hours from model reference time. */
+  hoursOffset: number;
+  levels: PressureLevelSample[];
+}
+
+export interface Sounding {
+  header: {
+    model: string;
+    refTime: string;
+    lat: number;
+    lon: number;
+    tzName?: string;
+    step: number;
+  };
+  timesteps: SoundingTimestep[];
+}
+
 // ── Airport ──────────────────────────────────────────────────────────────
 
 export interface AirportRunway {
