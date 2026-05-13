@@ -43,8 +43,8 @@ Session persists at `~/.config/windy-cli/session.json` (mode 600). Anonymous mod
 - **Account / auth**: `https://account.windy.com/api/info` — bootstraps JWT from `_account_sid` cookie
 - **Main API base**: `https://node.windy.com`
 - **Auth type**: HttpOnly cookie session → HS256 JWT, ~48 h lifetime, passed as `token2=` query or `Authorization: Bearer`
-- **Full spec**: `../windy-kb/.napkin/specs/windy-api-architecture.md`
-- **Intent doc**: `../windy-kb/.napkin/specs/windy-api-intent.md`
+- **Full spec**: `kb/windy-api-architecture.md`
+- **Intent doc**: `kb/windy-api-intent.md`
 
 ## Project Structure
 
@@ -91,12 +91,12 @@ Path obfuscation note: the SPA sometimes wraps forecast paths in base64 (`/Zm9yZ
 
 ## Knowledge Base
 
-Windy API discoveries are documented in `../windy-kb/.napkin/specs/`:
+Windy API discoveries are documented in `kb/` (in-repo):
 - `windy-api-architecture.md` — endpoints, auth, entity shapes, datetime conventions
 - `windy-api-intent.md` — per-endpoint Screen / Intent / Trigger
 - `windy-data-strategy.md` — caching strategy (stub)
 
-Update the napkin before committing — it is the source of truth for the next session.
+Update these before committing — they are the source of truth for the next session.
 
 ## Units (wire format)
 
