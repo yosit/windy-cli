@@ -115,6 +115,71 @@ export function buildProgram(): Command {
     });
 
   program
+    .command('refresh')
+    .description(
+      'Mint a fresh JWT from the stored _account_sid cookie (or WINDY_ACCOUNT_SID env var). ' +
+        'Designed for cron / agent use — exit 0 on success, 1 on failure. ' +
+        'New JWT and any rotated cookie are persisted to the session file.',
+    )
+    .option('--token-only', 'print just the JWT to stdout (suitable for $(...) substitution)')
+    .option('--env', 'print as shell env-var format (WINDY_TOKEN=eyJ...) for `eval $(...)`')
+    .option('--quiet', 'suppress output on success (exit code only)')
+    .action(async (opts) => {
+      try {
+        const client = WindyClient.fromEnv();
+        const info = await client.refreshAuth();
+        const s = client.persistedSession;
+        if (opts.quiet) return;
+        if (opts.tokenOnly) {
+          process.stdout.write((s.token ?? '') + '\n');
+          return;
+        }
+        if (opts.env) {
+          process.stdout.write(`WINDY_TOKEN=${s.token}\n`);
+          if (s.accountSid) process.stdout.write(`WINDY_ACCOUNT_SID=${s.accountSid}\n`);
+          if (s.uid) process.stdout.write(`WINDY_UID=${s.uid}\n`);
+          return;
+        }
+        out({
+          refreshed: true,
+          username: info.userInfo?.username,
+          userId: info.userInfo?.id,
+          subscription: info.subscription,
+          tokenExpiresAt: s.tokenExp ? new Date(s.tokenExp * 1000).toISOString() : null,
+          tokenExpiresInSeconds: s.tokenExp ? Math.max(0, s.tokenExp - Math.floor(Date.now() / 1000)) : null,
+          sessionPath: sessionPath(),
+        });
+      } catch (err: unknown) {
+        die(err instanceof Error ? err.message : String(err));
+      }
+    });
+
+  program
+    .command('token')
+    .description(
+      'Print the current JWT to stdout. Refreshes first if it expires within --margin seconds (default 600). ' +
+        'Use this from scripts that just need a fresh JWT: `export WINDY_TOKEN=$(windy token)`.',
+    )
+    .option('--margin <s>', 'refresh if token expires within this many seconds', '600')
+    .option('--no-refresh', 'never call /api/info — just print the cached token (or fail)')
+    .action(async (opts) => {
+      try {
+        const client = WindyClient.fromEnv();
+        const margin = Number(opts.margin);
+        const s = client.persistedSession;
+        const needsRefresh = !s.token || !s.tokenExp || Date.now() / 1000 > s.tokenExp - margin;
+        if (needsRefresh && opts.refresh !== false) {
+          await client.refreshAuth();
+        }
+        const token = client.persistedSession.token;
+        if (!token) die('no token in session — run `windy refresh` or set WINDY_TOKEN');
+        process.stdout.write(token + '\n');
+      } catch (err: unknown) {
+        die(err instanceof Error ? err.message : String(err));
+      }
+    });
+
+  program
     .command('logout')
     .description('Forget the stored session.')
     .action(() => {

@@ -123,6 +123,13 @@ export class WindyClient {
    * Otherwise an anonymous JWT (still usable for most public endpoints).
    */
   async refreshAuth(): Promise<AccountInfo> {
+    if (!this.session.accountSid) {
+      throw new Error(
+        'refresh requires the `_account_sid` cookie. Set WINDY_ACCOUNT_SID, ' +
+          'or run `windy login --cookie ...`. A bare JWT (WINDY_TOKEN) cannot be ' +
+          'refreshed — it expires in ~48 h and must be replaced.',
+      );
+    }
     // Bypass ensureAuth() to avoid recursion — the /api/info call IS the refresh.
     const info = await this.requestNoEnsure<AccountInfo>('/api/info', {
       host: ACCOUNT_HOST,
@@ -1029,6 +1036,17 @@ export class WindyClient {
           timeout: Number(process.env.WINDY_HTTP_TIMEOUT ?? 30000),
         },
         (res) => {
+          // Capture rotated _account_sid if present
+          const setCookies = res.headers['set-cookie'];
+          if (setCookies && Array.isArray(setCookies)) {
+            for (const c of setCookies) {
+              const m = /^_account_sid=([^;]+)/.exec(c);
+              if (m && m[1] !== this.session.accountSid) {
+                this.session.accountSid = m[1];
+                if (!this.ephemeral) this.persist();
+              }
+            }
+          }
           let stream: NodeJS.ReadableStream = res;
           const encoding = res.headers['content-encoding'];
           if (encoding === 'gzip') stream = res.pipe(createGunzip());

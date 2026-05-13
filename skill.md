@@ -153,6 +153,34 @@ Models: `ecmwf`, `gfs`, `icon`, `iconEu`, `iconD2`, `mblue`, `namConus`, `namHaw
 | `windy logout` | Clear stored session |
 | `windy whoami` | Refresh JWT and show user / subscription info |
 | `windy session` | Show session file path, decoded token claims |
+| `windy refresh [--token-only \| --env \| --quiet]` | Cron-friendly: mint a fresh JWT from the cookie and persist it |
+| `windy token [--margin SECONDS \| --no-refresh]` | Print current JWT (refreshes if stale) — for `export WINDY_TOKEN=$(windy token)` |
+
+## Keeping the JWT fresh from cron / an agent
+
+The JWT lives ~48 h; the `_account_sid` cookie lives months. To keep an agent permanently authenticated:
+
+**One-time setup** — set the durable cookie credential as an env var (use psst, AWS Secrets, k8s secret, or similar — never commit it):
+```bash
+export WINDY_ACCOUNT_SID='s%3AckP2NEUYmbDiEGmf...'
+```
+
+**Periodic refresh** — schedule any of these patterns:
+
+```bash
+# Cron every 6 hours: refresh JWT, log success/failure
+0 */6 * * *  /usr/local/bin/windy refresh --quiet || logger -t windy "refresh failed"
+
+# Or write the env-var file your agent sources before each run
+0 */6 * * *  /usr/local/bin/windy refresh --env > ~/.config/windy-cli/env
+
+# In your agent process, just call this before each request — auto-refreshes if stale
+export WINDY_TOKEN=$(WINDY_ACCOUNT_SID=$SID windy token --margin 3600)
+```
+
+`windy refresh` writes the new JWT to `~/.config/windy-cli/session.json`. Any other invocation of `windy <command>` automatically uses the stored JWT. If the server rotates the `_account_sid` cookie on the response, the new cookie value is also persisted.
+
+Exit codes: `0` on success, `1` on any failure (expired cookie, network error, etc.) — safe for `|| alert` patterns.
 
 ## Output
 
@@ -163,12 +191,14 @@ Models: `ecmwf`, `gfs`, `icon`, `iconEu`, `iconD2`, `mblue`, `namConus`, `namHaw
 
 | Var | Purpose |
 |-----|---------|
-| `WINDY_TOKEN` | JWT to use directly (skip cookie bootstrap) |
-| `WINDY_ACCOUNT_SID` | `_account_sid` cookie value |
+| `WINDY_ACCOUNT_SID` | `_account_sid` cookie value (**durable**, lasts months — set this for cron) |
+| `WINDY_TOKEN` | Pre-issued JWT (**short-lived**, ~48 h — use for one-off invocations) |
 | `WINDY_UID` | Override the device UUID |
 | `WINDY_API_KEY` | Separate api.windy.com key (only for `windy api ...` commands) |
 | `WINDY_HTTP_TIMEOUT` | HTTP request timeout in ms (default 30000) |
 | `XDG_CONFIG_HOME` | Overrides config dir (defaults to `~/.config`) |
+
+Precedence: env vars override the session file. Setting `WINDY_ACCOUNT_SID` (alone) is the recommended pattern — the CLI will mint and cache a JWT as needed.
 
 ## Units (response wire format)
 
