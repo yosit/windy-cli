@@ -12,26 +12,54 @@ This repo ships **three** surfaces over the same underlying client:
 
 All three reuse the same `WindyClient`, so authentication, JWT refresh, and endpoint coverage stay in lock-step.
 
-## Quick start (CLI)
+## Install
+
+### From git (works today)
 
 ```bash
-pnpm install
-pnpm build
+# global CLI
+npm  i -g github:yosit/windy-cli
+pnpm add -g github:yosit/windy-cli            # equivalent
 
-# Anonymous works for most endpoints
-node bin/windy-skill.js point 32.0853,34.7818 --model ecmwf
-node bin/windy-skill.js storms list
-node bin/windy-skill.js near 48.85,2.35           # nearby weather stations
-
-# Auth via JWT or _account_sid cookie (see "Auth" below)
-WINDY_TOKEN='eyJ...' node bin/windy-skill.js whoami
+# pin a tag or commit
+npm  i -g github:yosit/windy-cli#v0.1.5
+pnpm add -g github:yosit/windy-cli#main
 ```
 
-Install globally once it's published:
+`prepare` runs `tsc` automatically on install, so the `windy` binary is built and on your `$PATH` afterward.
+
+As a library in a project:
+
+```bash
+pnpm add github:yosit/windy-cli
+# then: import { WindyClient } from '@yosit/windy-skill'
+```
+
+### From npm (once published)
 
 ```bash
 npm i -g @yosit/windy-skill
-windy point 32.0853,34.7818
+```
+
+### From source
+
+```bash
+git clone https://github.com/yosit/windy-cli.git && cd windy-cli
+pnpm install
+pnpm build
+node bin/windy-skill.js point 32.0853,34.7818 --model ecmwf
+```
+
+## Quick start (CLI)
+
+```bash
+# Anonymous works for most endpoints
+windy point 32.0853,34.7818 --model ecmwf
+windy storms list
+windy stations near 48.85,2.35
+
+# Auth via JWT or _account_sid cookie (see "Auth" below)
+WINDY_TOKEN='eyJ...' windy whoami
 ```
 
 Output is [toon](https://github.com/toon-format/toon) by default; pass `--format json` for JSON.
