@@ -433,6 +433,45 @@ export function buildProgram(): Command {
         c.webcamArchive(id, { imageSize: opts.size, archiveType: opts.type }),
       ),
     );
+  webcams
+    .command('search <query>')
+    .description('Text-search across all webcams.')
+    .option('--near <lat,lon>', 'optional bias coordinate')
+    .action((query, opts) =>
+      withClient((c) => {
+        const bias = opts.near ? parseLatLon(opts.near) : null;
+        return c.webcamSearch(query, bias ? { lat: bias[0], lon: bias[1] } : {});
+      }),
+    );
+  webcams
+    .command('ping <id>')
+    .description('Webcam health/ping metrics.')
+    .action((id) => withClient((c) => c.webcamPing(id)));
+
+  // ── Airport ──────────────────────────────────────────────────────────────
+
+  program
+    .command('airport <icao>')
+    .description('Airport info, runways, METAR (e.g., LLBG, KJFK, EGLL).')
+    .action((icao) => withClient((c) => c.airport(icao)));
+
+  // ── Citytile ─────────────────────────────────────────────────────────────
+
+  program
+    .command('citytile <model> <z> <x> <y>')
+    .description('City overlay tile (per-city forecast pills).')
+    .option('--ref-time <iso>', 'override model reference time')
+    .option('--step <h>', 'sample interval in hours', '3')
+    .option('--hours <n>', 'forecast horizon hours')
+    .action((model, z, x, y, opts) =>
+      withClient((c) =>
+        c.citytile(model, Number(z), Number(x), Number(y), {
+          refTime: opts.refTime,
+          step: Number(opts.step),
+          hours: opts.hours ? Number(opts.hours) : undefined,
+        }),
+      ),
+    );
 
   // ── Radar / satellite ────────────────────────────────────────────────────
 
@@ -443,8 +482,14 @@ export function buildProgram(): Command {
   radar.command('coverage').description('Radar coverage polygon.').action(() =>
     withClient((c) => c.radarCoverage()),
   );
+  radar.command('archive').description('Radar archive frame index.').action(() =>
+    withClient((c) => c.radarArchive()),
+  );
   radar.command('satellite').description('Satellite composite metadata.').action(() =>
     withClient((c) => c.satelliteInfo()),
+  );
+  radar.command('satellite-archive').description('Satellite archive frame range.').action(() =>
+    withClient((c) => c.satelliteArchive()),
   );
   radar
     .command('image-url <type> <lat,lon>')
@@ -484,14 +529,89 @@ export function buildProgram(): Command {
     withClient((c) => c.favourites()),
   );
   favs
-    .command('delete <key>')
-    .description('Delete a favourite by key.')
-    .action((key) => withClient((c) => c.deleteFavourite(key)));
+    .command('add <lat,lon> <title>')
+    .description('Add a new favourite.')
+    .option('--note <text>', 'note attached to the favourite')
+    .option('--cc <code>', 'ISO country code')
+    .option('--pin', 'pin this favourite', false)
+    .action((latlon, title, opts) =>
+      withClient(async (c) => {
+        const [lat, lon] = parseLatLon(latlon);
+        return c.addFavourite({
+          lat,
+          lon,
+          title,
+          note: opts.note,
+          cc: opts.cc,
+          pin: opts.pin,
+          key: `${lat.toFixed(3)}/${lon.toFixed(3)}`,
+        } as Parameters<typeof c.addFavourite>[0]);
+      }),
+    );
+  favs
+    .command('delete <id>')
+    .description('Delete a favourite by id.')
+    .action((id) => withClient((c) => c.deleteFavourite(id)));
+
+  const userAlerts = program.command('user-alerts').description('User alerts CRUD (requires login).');
+  userAlerts.command('list').description('List user alerts.').action(() =>
+    withClient((c) => c.userAlerts()),
+  );
+  userAlerts.command('get <id>').description('Get user alert by id.').action((id) =>
+    withClient((c) => c.getUserAlert(id)),
+  );
+  userAlerts.command('delete <id>').description('Delete a user alert.').action((id) =>
+    withClient((c) => c.deleteUserAlert(id)),
+  );
 
   program
     .command('settings')
     .description('User settings (requires login).')
     .action(() => withClient((c) => c.userSettings()));
+  program
+    .command('colors')
+    .description('Custom color palettes (requires login).')
+    .action(() => withClient((c) => c.userColors()));
+  program
+    .command('plugins')
+    .description('Installed plugin list (requires login).')
+    .action(() => withClient((c) => c.userPlugins()));
+  program
+    .command('device')
+    .description('Device registration (requires login).')
+    .action(() => withClient((c) => c.userDevice()));
+
+  // ── Articles / promos ────────────────────────────────────────────────────
+
+  const articles = program.command('articles').description('Startup banner content.');
+  articles
+    .command('article')
+    .description('Startup article banner.')
+    .option('--lat <n>')
+    .option('--lon <n>')
+    .action((opts) =>
+      withClient((c) =>
+        c.startupArticle({
+          lat: opts.lat ? Number(opts.lat) : undefined,
+          lon: opts.lon ? Number(opts.lon) : undefined,
+        }),
+      ),
+    );
+  articles
+    .command('promo')
+    .description('Startup marketing promo.')
+    .option('--lat <n>')
+    .option('--lon <n>')
+    .option('--force-id <id>')
+    .action((opts) =>
+      withClient((c) =>
+        c.startupPromo({
+          lat: opts.lat ? Number(opts.lat) : undefined,
+          lon: opts.lon ? Number(opts.lon) : undefined,
+          forceId: opts.forceId,
+        }),
+      ),
+    );
 
   return program;
 }

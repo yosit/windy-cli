@@ -508,3 +508,93 @@ export type AirQualityModel = (typeof AIR_QUALITY_MODELS)[number];
 
 export const POI_TYPES = ['airq', 'stations', 'tides', 'webcams'] as const;
 export type PoiType = (typeof POI_TYPES)[number];
+
+// ── Airport ──────────────────────────────────────────────────────────────
+
+export interface AirportRunway {
+  id: number;
+  closed: 0 | 1;
+  lighted: 0 | 1;
+  surface: string; // "ASP", "CON", "GRS"...
+  he_ident: string;
+  le_ident: string;
+  width_ft: number;
+  length_ft: number;
+  airport_ref: number;
+  airport_ident: string;
+  he_elevation_ft: number;
+  he_heading_degT: number;
+  he_latitude_deg: number;
+  le_elevation_ft: number;
+  le_heading_degT: number;
+  le_latitude_deg: number;
+  he_longitude_deg: number;
+  le_longitude_deg: number;
+  he_displaced_threshold_ft: number | null;
+  le_displaced_threshold_ft: number | null;
+}
+
+export interface AirportInfo {
+  id: string;
+  iata?: string;
+  subtype: 'large_airport' | 'medium_airport' | 'small_airport' | 'heliport' | 'seaplane_base' | string;
+  name: string;
+  source: string;
+  home_link?: string;
+  wikipedia_link?: string;
+  keywords: string | null;
+  elev_ft: string;
+  elev_m: string;
+  scheduled_service: 'yes' | 'no';
+  runways: AirportRunway[];
+  /** Latest METAR — keys vary by source. */
+  metar?: unknown;
+  /** Latest TAF if available. */
+  taf?: unknown;
+  /** Frequencies / radio info if available. */
+  frequencies?: unknown[];
+}
+
+export interface AirportResponse {
+  info: AirportInfo;
+}
+
+// ── User Alerts ──────────────────────────────────────────────────────────
+
+export type AlertConditionType =
+  | 'cloudiness'
+  | 'freshSnow'
+  | 'rainfall'
+  | 'swell'
+  | 'temperature'
+  | 'time'
+  | 'wind';
+
+export type AlertStatus = 'triggered' | 'normal' | 'suspended';
+
+export interface UserAlertCondition {
+  type: AlertConditionType;
+  /** Threshold values; shape depends on `type` */
+  [k: string]: unknown;
+}
+
+export interface UserAlertItem {
+  id?: string;
+  /** Server wraps `value` similarly to favourites */
+  value?: {
+    type: 'alert';
+    version: string;
+    lat: number;
+    lon: number;
+    title: string;
+    enabled: boolean;
+    conditions: UserAlertCondition[];
+    status?: AlertStatus;
+    updated: number;
+    userID: string;
+    counter: number;
+    [k: string]: unknown;
+  };
+  updated?: number;
+  storeTs?: number;
+}

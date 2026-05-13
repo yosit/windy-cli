@@ -3,9 +3,11 @@ import { URL } from 'url';
 import { createGunzip, createBrotliDecompress, createInflate } from 'zlib';
 import type {
   AccountInfo,
+  AirportResponse,
   AirQualityPOI,
   CapAlert,
   Favourite,
+  FavouriteValue,
   LiveAlertsResponse,
   NearbyAirQualityStation,
   NearbyWeatherStation,
@@ -15,7 +17,7 @@ import type {
   SearchResponse,
   StormsResponse,
   TideForecast,
-  UserAlert,
+  UserAlertItem,
   Webcam,
   WebcamList,
   PointModel,
@@ -453,6 +455,22 @@ export class WindyClient {
     });
   }
 
+  /** Radar archive frame index. */
+  async radarArchive(): Promise<unknown> {
+    return this.request('https://rdr.windy.com/radar2/archive/composite/minifest2.json', {
+      auth: false,
+      skipEnvelope: true,
+    });
+  }
+
+  /** Satellite archive frame range. */
+  async satelliteArchive(): Promise<unknown> {
+    return this.request('https://sat.windy.com/satellite/archive/range.json', {
+      auth: false,
+      skipEnvelope: true,
+    });
+  }
+
   /** URL of a pre-rendered radar/satellite widget image. */
   widgetImageUrl(
     type: 'radar' | 'satellite',
@@ -486,31 +504,135 @@ export class WindyClient {
     return `https://${NODE_S_HOST}/imaker/map?${params}`;
   }
 
+  // ── Airports ───────────────────────────────────────────────────────────
+
+  /**
+   * Airport info by ICAO code (e.g. `LLBG`, `KJFK`, `EGLL`).
+   * Returns runways, METAR, TAF, and metadata.
+   */
+  async airport(icao: string): Promise<AirportResponse> {
+    return this.request<AirportResponse>(`/airports/adinfo/${icao.toUpperCase()}`);
+  }
+
+  // ── Citytile (city pill data) ──────────────────────────────────────────
+
+  /**
+   * City-overlay tile data — list of named cities visible in the tile, each
+   * with a forecast curve. Used by the home map "city temperature pills".
+   * @param model Forecast model identifier (e.g. `ecmwf-hres`, `gfs`)
+   * @param z Tile zoom
+   * @param x Tile X
+   * @param y Tile Y
+   */
+  async citytile(
+    model: string,
+    z: number,
+    x: number,
+    y: number,
+    opts: { refTime?: string; step?: number; hours?: number; labelsVersion?: string } = {},
+  ): Promise<unknown> {
+    return this.request(`/citytile/v1.0/${model}/${z}/${x}/${y}`, {
+      qs: {
+        labelsVersion: opts.labelsVersion ?? 'v2.0',
+        step: opts.step ?? 3,
+        refTime: opts.refTime,
+        hours: opts.hours,
+      },
+    });
+  }
+
+  // ── Webcam search & metrics ────────────────────────────────────────────
+
+  /** Webcam text search (admin.windy.com). Returns matches, optionally biased by lat/lon. */
+  async webcamSearch(
+    query: string,
+    opts: { lat?: number; lon?: number } = {},
+  ): Promise<unknown> {
+    const qs: Record<string, string | number> = {
+      textQuery: query,
+      lang: this.lang,
+    };
+    if (opts.lat !== undefined) qs.lat = fmt(opts.lat);
+    if (opts.lon !== undefined) qs.lon = fmt(opts.lon);
+    return this.request('https://admin.windy.com/webcams/admin/v1.0/views', {
+      qs,
+      skipEnvelope: true,
+      auth: false,
+    });
+  }
+
+  /** Webcam health / ping metrics. */
+  async webcamPing(id: number | string): Promise<unknown> {
+    return this.request(`/webcams/ping/${id}`);
+  }
+
   // ── User data (require login) ──────────────────────────────────────────
 
   /** List user favourites. */
   async favourites(): Promise<Favourite[]> {
-    return this.requireAuthed('favourites'), this.request<Favourite[]>('/users/v1/data/favs');
+    this.requireAuthed('favourites');
+    return this.request<Favourite[]>('/users/v1/data/favs');
   }
 
-  async putFavourite(fav: Favourite): Promise<unknown> {
-    this.requireAuthed('putFavourite');
-    if (!fav.id) throw new Error('Favourite.id is required for PUT');
-    return this.request(`/users/v1/data/favs/${fav.id}`, {
+  /** Create a new favourite (server assigns the id). */
+  async addFavourite(
+    fav: Omit<
+      FavouriteValue,
+      'id' | 'userId' | 'userID' | 'counter' | 'deleted' | 'updated' | 'type' | 'version'
+    >,
+  ): Promise<unknown> {
+    this.requireAuthed('addFavourite');
+    const body = { ...fav, type: 'fav' as const, version: APP_VERSION, updated: Date.now() };
+    return this.request('/users/v1/data/favs', { method: 'POST', body });
+  }
+
+  /** Update an existing favourite by id. */
+  async updateFavourite(id: string, value: Partial<FavouriteValue>): Promise<unknown> {
+    this.requireAuthed('updateFavourite');
+    return this.request(`/users/v1/data/favs/${id}`, {
       method: 'PUT',
-      body: fav,
+      body: { ...value, updated: Date.now() },
     });
   }
 
-  async deleteFavourite(key: string): Promise<unknown> {
+  /** Delete a favourite by id. */
+  async deleteFavourite(id: string): Promise<unknown> {
     this.requireAuthed('deleteFavourite');
-    return this.request(`/users/v1/data/favs/${key}`, { method: 'DELETE' });
+    return this.request(`/users/v1/data/favs/${id}`, { method: 'DELETE' });
   }
 
   /** List user alerts. */
-  async userAlerts(): Promise<UserAlert[]> {
+  async userAlerts(): Promise<UserAlertItem[] | null> {
     this.requireAuthed('userAlerts');
-    return this.request<UserAlert[]>('/users/v1/data/alerts');
+    return this.request<UserAlertItem[] | null>('/users/v1/data/alerts');
+  }
+
+  /** Get a single user alert by id. */
+  async getUserAlert(id: string): Promise<UserAlertItem> {
+    this.requireAuthed('getUserAlert');
+    return this.request<UserAlertItem>(`/users/v1/data/alerts/${id}`);
+  }
+
+  /** Create a user alert. */
+  async addUserAlert(alert: NonNullable<UserAlertItem['value']>): Promise<unknown> {
+    this.requireAuthed('addUserAlert');
+    const body = { ...alert, type: 'alert' as const, version: APP_VERSION, updated: Date.now() };
+    return this.request('/users/v1/data/alerts', { method: 'POST', body });
+  }
+
+  /** Update a user alert. */
+  async updateUserAlert(id: string, value: Partial<NonNullable<UserAlertItem['value']>>): Promise<unknown> {
+    this.requireAuthed('updateUserAlert');
+    return this.request(`/users/v1/data/alerts/${id}`, {
+      method: 'PUT',
+      body: { ...value, updated: Date.now() },
+    });
+  }
+
+  /** Delete a user alert. */
+  async deleteUserAlert(id: string): Promise<unknown> {
+    this.requireAuthed('deleteUserAlert');
+    return this.request(`/users/v1/data/alerts/${id}`, { method: 'DELETE' });
   }
 
   /** Get user settings. */
@@ -519,11 +641,47 @@ export class WindyClient {
     return this.request('/users/settings');
   }
 
+  /** Update user settings. */
+  async updateUserSettings(patch: Record<string, unknown>): Promise<unknown> {
+    this.requireAuthed('updateUserSettings');
+    return this.request('/users/settings', { method: 'POST', body: patch });
+  }
+
+  /** List custom color palettes. */
+  async userColors(): Promise<unknown> {
+    this.requireAuthed('userColors');
+    return this.request('/users/v1/data/colors');
+  }
+
+  /** List installed plugins. */
+  async userPlugins(): Promise<unknown> {
+    this.requireAuthed('userPlugins');
+    return this.request('/users/v1/data/plugins');
+  }
+
+  /** Get device registration. */
+  async userDevice(): Promise<unknown> {
+    this.requireAuthed('userDevice');
+    return this.request(`/users/v3/devices/${this.session.uid}`);
+  }
+
   // ── Misc ───────────────────────────────────────────────────────────────
 
   /** Startup banner article. */
   async startupArticle(opts: { lat?: number; lon?: number } = {}): Promise<unknown> {
-    return this.request('/articles/startup/article', {
+    return this.startupContent('article', opts);
+  }
+
+  /** Startup marketing promo. */
+  async startupPromo(opts: { lat?: number; lon?: number; forceId?: string } = {}): Promise<unknown> {
+    return this.startupContent('promotion', opts);
+  }
+
+  private startupContent(
+    kind: 'article' | 'promotion',
+    opts: { lat?: number; lon?: number; forceId?: string },
+  ): Promise<unknown> {
+    return this.request(`/articles/startup/${kind}`, {
       qs: {
         country: this.country,
         device: 'desktop',
@@ -535,6 +693,7 @@ export class WindyClient {
         version: APP_VERSION,
         lat: opts.lat,
         lon: opts.lon,
+        forceId: opts.forceId,
       },
     });
   }
