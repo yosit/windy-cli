@@ -1,6 +1,6 @@
 {
   "name": "@yosit/windy-skill",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Claude Code skill and CLI for the Windy API",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
