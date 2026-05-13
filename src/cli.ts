@@ -9,7 +9,7 @@ import {
   OUTPUT_FORMAT_CHOICES,
   type OutputFormat,
 } from './formatters';
-import { POINT_MODELS, AIR_QUALITY_MODELS } from './types';
+import { POINT_MODELS, AIR_QUALITY_MODELS, MODEL_CATALOG, PREMIUM_FEATURES } from './types';
 
 let globalFormat: OutputFormat = DEFAULT_OUTPUT_FORMAT;
 
@@ -220,8 +220,38 @@ export function buildProgram(): Command {
 
   forecast
     .command('models')
-    .description('List supported point-forecast model identifiers.')
-    .action(() => out([...POINT_MODELS]));
+    .description('List supported forecast models with resolution, refresh interval, and premium uplift.')
+    .option('--keys-only', 'just print the key list')
+    .option('--scope <kind>', 'filter by scope: global | regional')
+    .option('--domain <kind>', 'filter by domain: general | waves | air_quality')
+    .action((opts) => {
+      if (opts.keysOnly) return out([...POINT_MODELS]);
+      const s = loadSession();
+      const isPremium = s.subscription === 'premium';
+      let rows = MODEL_CATALOG;
+      if (opts.scope) rows = rows.filter((r) => r.scope === opts.scope);
+      if (opts.domain) rows = rows.filter((r) => r.domain === opts.domain);
+      const table = rows.map((r) => ({
+        key: r.key,
+        name: r.name,
+        provider: r.provider,
+        res_km: r.resKm,
+        forecast_h: r.forecastHours,
+        free_refresh_min: r.freeIntervalMin,
+        premium_refresh_min: r.premiumIntervalMin ?? '—',
+        your_refresh_min: isPremium ? (r.premiumIntervalMin ?? r.freeIntervalMin) : r.freeIntervalMin,
+        speedup: r.premiumIntervalMin
+          ? `${(r.freeIntervalMin / r.premiumIntervalMin).toFixed(1)}x`
+          : '—',
+        scope: r.scope,
+        domain: r.domain,
+      }));
+      out({
+        yourTier: isPremium ? 'premium' : 'free',
+        premiumFeatures: PREMIUM_FEATURES,
+        models: table,
+      });
+    });
 
   forecast
     .command('manifest [model]')

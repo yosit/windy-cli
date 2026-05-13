@@ -495,6 +495,13 @@ export const POINT_MODELS = [
   'hrrrAlaska',
   'hrrrConus',
   'bomAccess',
+  'bomAccessAd',
+  'bomAccessBn',
+  'bomAccessDn',
+  'bomAccessNq',
+  'bomAccessPh',
+  'bomAccessSy',
+  'bomAccessVt',
   'ukv',
   'jmaMsm',
   'jmaCwmWaves',
@@ -502,6 +509,95 @@ export const POINT_MODELS = [
   'ecmwfWaves',
 ] as const;
 export type PointModel = (typeof POINT_MODELS)[number];
+
+export interface ModelCatalogEntry {
+  /** API identifier used in path-builder calls. */
+  key: PointModel | string;
+  /** Display name as shown in the SPA. */
+  name: string;
+  /** Issuing center. */
+  provider: string;
+  /** Server-side model identifier (used in tile URLs etc.). */
+  modelIdent: string;
+  /** Horizontal resolution in km. */
+  resKm: number;
+  /** Forecast horizon in hours. */
+  forecastHours: number;
+  /** Free-tier refresh interval in minutes (how often a new model run is exposed). */
+  freeIntervalMin: number;
+  /** Premium-tier refresh interval in minutes. `null` = no premium uplift. */
+  premiumIntervalMin: number | null;
+  /** Coverage: 'global' or a region. */
+  scope: 'global' | 'regional';
+  /** "wind" / "temperature" / "wave" / "air_quality" — primary domain. */
+  domain: 'general' | 'waves' | 'air_quality';
+}
+
+/**
+ * Hand-curated catalog of Windy's point-forecast models, captured 2026-05-13
+ * from `window.W.products` in the SPA. Premium subscribers get faster refresh
+ * intervals (see `premiumIntervalMin`) AND hourly temporal step for the first
+ * 90-120 hours (vs 3-hourly for free users).
+ */
+export const MODEL_CATALOG: ModelCatalogEntry[] = [
+  // Global
+  { key: 'ecmwf', name: 'ECMWF',         provider: 'ECMWF',  modelIdent: 'ecmwf-hres',  resKm: 9,   forecastHours: 240, freeIntervalMin: 720, premiumIntervalMin: 360, scope: 'global',   domain: 'general' },
+  { key: 'gfs',   name: 'GFS',           provider: 'NOAA',   modelIdent: 'gfs',         resKm: 22,  forecastHours: 360, freeIntervalMin: 720, premiumIntervalMin: 360, scope: 'global',   domain: 'general' },
+  { key: 'icon',  name: 'ICON',          provider: 'DWD',    modelIdent: 'icon-global', resKm: 13,  forecastHours: 168, freeIntervalMin: 720, premiumIntervalMin: 360, scope: 'global',   domain: 'general' },
+  { key: 'mblue', name: 'METEOBLUE',     provider: 'Meteoblue', modelIdent: '',         resKm: 0,   forecastHours: 240, freeIntervalMin: 720, premiumIntervalMin: null, scope: 'global',  domain: 'general' },
+  // High-res regional — premium uplifts to 3-4× faster refresh
+  { key: 'hrrrConus',   name: 'HRRR (CONUS)',     provider: 'NCEP',       modelIdent: 'hrrr-conus',     resKm: 3,   forecastHours: 72,  freeIntervalMin: 720, premiumIntervalMin: 60,  scope: 'regional', domain: 'general' },
+  { key: 'hrrrAlaska',  name: 'HRRR-AK',          provider: 'NCEP',       modelIdent: 'hrrr-alaska',    resKm: 3,   forecastHours: 72,  freeIntervalMin: 720, premiumIntervalMin: 180, scope: 'regional', domain: 'general' },
+  { key: 'iconD2',      name: 'ICON-D2',          provider: 'DWD',        modelIdent: 'icon-d2',        resKm: 2.2, forecastHours: 48,  freeIntervalMin: 720, premiumIntervalMin: 180, scope: 'regional', domain: 'general' },
+  { key: 'iconEu',      name: 'ICON-EU',          provider: 'DWD',        modelIdent: 'icon-eu',        resKm: 7,   forecastHours: 120, freeIntervalMin: 720, premiumIntervalMin: 180, scope: 'regional', domain: 'general' },
+  { key: 'arome',       name: 'AROME-HD',         provider: 'Météo-France', modelIdent: 'arome',         resKm: 1.3, forecastHours: 42,  freeIntervalMin: 720, premiumIntervalMin: 180, scope: 'regional', domain: 'general' },
+  { key: 'aromeFrance', name: 'AROME (France)',   provider: 'Météo-France', modelIdent: 'arome-france',  resKm: 2.5, forecastHours: 42,  freeIntervalMin: 720, premiumIntervalMin: 180, scope: 'regional', domain: 'general' },
+  { key: 'aromeAntilles', name: 'AROME (Antilles)', provider: 'Météo-France', modelIdent: 'arome-antilles', resKm: 2.5, forecastHours: 42, freeIntervalMin: 720, premiumIntervalMin: 360, scope: 'regional', domain: 'general' },
+  { key: 'aromeReunion', name: 'AROME (Réunion)', provider: 'Météo-France', modelIdent: 'arome-reunion', resKm: 2.5, forecastHours: 42,  freeIntervalMin: 720, premiumIntervalMin: 360, scope: 'regional', domain: 'general' },
+  { key: 'ukv',         name: 'UKV',              provider: 'Met Office', modelIdent: 'ukv',            resKm: 2,   forecastHours: 120, freeIntervalMin: 720, premiumIntervalMin: 180, scope: 'regional', domain: 'general' },
+  { key: 'namConus',    name: 'NAM (CONUS)',      provider: 'NOAA',       modelIdent: 'nam-conus',      resKm: 5,   forecastHours: 72,  freeIntervalMin: 720, premiumIntervalMin: 360, scope: 'regional', domain: 'general' },
+  { key: 'namHawaii',   name: 'NAM-HI',           provider: 'NOAA',       modelIdent: 'nam-hawaii',     resKm: 3,   forecastHours: 72,  freeIntervalMin: 720, premiumIntervalMin: 360, scope: 'regional', domain: 'general' },
+  { key: 'namAlaska',   name: 'NAM-AK',           provider: 'NOAA',       modelIdent: 'nam-alaska',     resKm: 6,   forecastHours: 72,  freeIntervalMin: 720, premiumIntervalMin: 360, scope: 'regional', domain: 'general' },
+  { key: 'canHrdps',    name: 'HRDPS',            provider: 'MSC Canada', modelIdent: 'can-hrdps',      resKm: 2.5, forecastHours: 240, freeIntervalMin: 720, premiumIntervalMin: 360, scope: 'regional', domain: 'general' },
+  { key: 'czeAladin',   name: 'ALADIN',           provider: 'CHMI Czech', modelIdent: 'cze-aladin',     resKm: 2.3, forecastHours: 240, freeIntervalMin: 720, premiumIntervalMin: 360, scope: 'regional', domain: 'general' },
+  { key: 'jmaMsm',      name: 'MSM',              provider: 'JMA Japan',  modelIdent: 'jma-msm',        resKm: 5,   forecastHours: 240, freeIntervalMin: 720, premiumIntervalMin: 180, scope: 'regional', domain: 'general' },
+  { key: 'bomAccess',   name: 'ACCESS (Australia)', provider: 'BOM',      modelIdent: 'bom-access',     resKm: 12,  forecastHours: 240, freeIntervalMin: 720, premiumIntervalMin: 360, scope: 'regional', domain: 'general' },
+  { key: 'bomAccessAd', name: 'ACCESS-C Adelaide',  provider: 'BOM',      modelIdent: 'bom-access-c-ad', resKm: 1.5, forecastHours: 36, freeIntervalMin: 720, premiumIntervalMin: 360, scope: 'regional', domain: 'general' },
+  { key: 'bomAccessBn', name: 'ACCESS-C Brisbane',  provider: 'BOM',      modelIdent: 'bom-access-c-bn', resKm: 1.5, forecastHours: 36, freeIntervalMin: 720, premiumIntervalMin: 360, scope: 'regional', domain: 'general' },
+  { key: 'bomAccessDn', name: 'ACCESS-C Darwin',    provider: 'BOM',      modelIdent: 'bom-access-c-dn', resKm: 1.5, forecastHours: 36, freeIntervalMin: 720, premiumIntervalMin: 360, scope: 'regional', domain: 'general' },
+  { key: 'bomAccessNq', name: 'ACCESS-C N. Queensland', provider: 'BOM',  modelIdent: 'bom-access-c-nq', resKm: 1.5, forecastHours: 36, freeIntervalMin: 720, premiumIntervalMin: 360, scope: 'regional', domain: 'general' },
+  { key: 'bomAccessPh', name: 'ACCESS-C Perth',     provider: 'BOM',      modelIdent: 'bom-access-c-ph', resKm: 1.5, forecastHours: 36, freeIntervalMin: 720, premiumIntervalMin: 360, scope: 'regional', domain: 'general' },
+  { key: 'bomAccessSy', name: 'ACCESS-C Sydney',    provider: 'BOM',      modelIdent: 'bom-access-c-sy', resKm: 1.5, forecastHours: 36, freeIntervalMin: 720, premiumIntervalMin: 360, scope: 'regional', domain: 'general' },
+  { key: 'bomAccessVt', name: 'ACCESS-C Victoria/Tas.', provider: 'BOM',  modelIdent: 'bom-access-c-vt', resKm: 1.5, forecastHours: 36, freeIntervalMin: 720, premiumIntervalMin: 360, scope: 'regional', domain: 'general' },
+  // Waves
+  { key: 'ecmwfWaves',  name: 'ECMWF WAM',  provider: 'ECMWF', modelIdent: 'ecmwf-wam',  resKm: 9,   forecastHours: 240, freeIntervalMin: 720, premiumIntervalMin: 360, scope: 'global',   domain: 'waves' },
+  { key: 'gfsWaves',    name: 'GFS Wave',   provider: 'NOAA',  modelIdent: 'gfs-wave',   resKm: 22,  forecastHours: 360, freeIntervalMin: 720, premiumIntervalMin: 360, scope: 'global',   domain: 'waves' },
+  { key: 'iconEuWaves', name: 'ICON-EU EWAM', provider: 'DWD', modelIdent: 'icon-ewam', resKm: 7,    forecastHours: 240, freeIntervalMin: 720, premiumIntervalMin: null, scope: 'regional', domain: 'waves' },
+  { key: 'jmaCwmWaves', name: 'CWM',        provider: 'JMA Japan', modelIdent: 'jma-cwm', resKm: 5,  forecastHours: 240, freeIntervalMin: 720, premiumIntervalMin: 360, scope: 'regional', domain: 'waves' },
+  { key: 'canRdwpsWaves', name: 'RDWPS',    provider: 'MSC Canada', modelIdent: 'can-rdwps', resKm: 2.5, forecastHours: 240, freeIntervalMin: 720, premiumIntervalMin: 360, scope: 'regional', domain: 'waves' },
+  // Air quality
+  { key: 'cams',   name: 'CAMS (Global)',  provider: 'Copernicus', modelIdent: 'cams-global', resKm: 40, forecastHours: 240, freeIntervalMin: 720,  premiumIntervalMin: null, scope: 'global',   domain: 'air_quality' },
+  { key: 'camsEu', name: 'CAMS (Europe)',  provider: 'Copernicus', modelIdent: 'cams-eu',     resKm: 10, forecastHours: 240, freeIntervalMin: 1440, premiumIntervalMin: null, scope: 'regional', domain: 'air_quality' },
+];
+
+/**
+ * Premium-only forecast features that go beyond just refresh-rate uplift:
+ *
+ * 1. **Hourly temporal step** (`step=1`) for hours 1-90 on ECMWF and 1-120 on
+ *    GFS. Free users get `step=3` (3-hourly) for those windows.
+ * 2. **Extended 15-day window** on ECMWF when `extended=true` is passed.
+ *    Free users are capped at 10 days.
+ * 3. **Most-recent model run** — premium gets the new run (e.g., 06Z) as soon
+ *    as it's available; free users may be delayed to the previous run.
+ *
+ * Source: comparing `/metadata/v1.0/forecast/{model}/minifest.json` with and
+ * without `?premium=true` for the same model.
+ */
+export const PREMIUM_FEATURES = {
+  hourlyStepHours: { ecmwf: 90, gfs: 120 },
+  extendedDaysEcmwf: { free: 10, premium: 15 },
+  modelRunFreshness: 'premium receives the new model run earlier than free',
+} as const;
 
 export const AIR_QUALITY_MODELS = ['cams', 'camsEu'] as const;
 export type AirQualityModel = (typeof AIR_QUALITY_MODELS)[number];
