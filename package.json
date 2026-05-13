@@ -1,0 +1,48 @@
+{
+  "name": "@yosit/windy-skill",
+  "version": "0.1.0",
+  "description": "Claude Code skill and CLI for the Windy API",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "windy-skill": "bin/windy-skill.js",
+    "windy": "dist/cli.js"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "skills/",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepare": "pnpm run build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "skill",
+    "windy"
+  ],
+  "author": "yosit",
+  "license": "MIT",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=16"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "dependencies": {
+    "@toon-format/toon": "^2.1.0",
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
