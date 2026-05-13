@@ -1,0 +1,47 @@
+{
+  "name": "@yosit/dripline-plugin-windy",
+  "version": "0.1.0",
+  "description": "Dripline plugin exposing the windy.com API as SQL tables (forecasts, stations, alerts, storms, webcams, tides, geo, account).",
+  "type": "module",
+  "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/",
+    "src/",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "lint": "tsc --noEmit"
+  },
+  "keywords": [
+    "dripline",
+    "dripline-plugin",
+    "windy",
+    "weather",
+    "duckdb",
+    "sql"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@yosit/windy-skill": "workspace:*"
+  },
+  "peerDependencies": {
+    "dripline": ">=0.3.0"
+  },
+  "peerDependenciesMeta": {
+    "dripline": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/node": "^25.3.0"
+  }
+}
