@@ -6,7 +6,7 @@ This repo ships **three** surfaces over the same underlying client:
 
 | Surface | Package | Path | Use it when… |
 |---------|---------|------|--------------|
-| **CLI + library** | `@yosit/windy-skill` | `src/`, `bin/` | You want the `windy` binary or to import `WindyClient` directly. |
+| **CLI + library** | `@yosit/windy-cli` | `src/` | You want the `windy` binary or to import `WindyClient` directly. |
 | **Runline plugin** | `@yosit/runline-plugin-windy` | [`plugins/runline/`](./plugins/runline/) | You're building [runline](https://github.com/Michaelliv/runline) agents and want `windy.*` actions in your scripts. |
 | **Dripline plugin** | `@yosit/dripline-plugin-windy` | [`plugins/dripline/`](./plugins/dripline/) | You want to query windy as SQL tables via [dripline](https://github.com/Michaelliv/dripline) / DuckDB. |
 
@@ -32,13 +32,13 @@ As a library in a project:
 
 ```bash
 pnpm add github:yosit/windy-cli
-# then: import { WindyClient } from '@yosit/windy-skill'
+# then: import { WindyClient } from '@yosit/windy-cli'
 ```
 
 ### From npm (once published)
 
 ```bash
-npm i -g @yosit/windy-skill
+npm i -g @yosit/windy-cli
 ```
 
 ### From source
@@ -47,7 +47,7 @@ npm i -g @yosit/windy-skill
 git clone https://github.com/yosit/windy-cli.git && cd windy-cli
 pnpm install
 pnpm build
-node bin/windy-skill.js point 32.0853,34.7818 --model ecmwf
+node dist/cli.js point 32.0853,34.7818 --model ecmwf
 ```
 
 ## Quick start (CLI)
@@ -85,7 +85,7 @@ Run `windy --help` (or `windy <group> --help`) for the full list.
 ## Library use
 
 ```ts
-import { WindyClient } from '@yosit/windy-skill';
+import { WindyClient } from '@yosit/windy-cli';
 
 const c = WindyClient.fromEnv();             // reads WINDY_TOKEN / WINDY_ACCOUNT_SID / WINDY_UID
 const f = await c.pointForecast(32.0853, 34.7818, { model: 'ecmwf' });
@@ -165,8 +165,6 @@ src/
   types.ts        Response shapes + model/overlay/level catalogs
   formatters.ts   json (default) + toon output
   index.ts        Public library exports
-bin/
-  windy-skill.js  shebang wrapper for the CLI
 plugins/runline/   Runline plugin — windy.* actions
 plugins/dripline/  Dripline plugin — windy_* SQL tables
 kb/
@@ -209,7 +207,7 @@ cd plugins/runline  && pnpm build
 cd plugins/dripline && pnpm build
 ```
 
-Both plugins type-map `@yosit/windy-skill` to the parent's built `dist/`, so run `pnpm build` at the root first.
+Both plugins type-map `@yosit/windy-cli` to the parent's built `dist/`, so run `pnpm build` at the root first.
 
 ## License
 

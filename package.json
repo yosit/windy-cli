@@ -1,15 +1,13 @@
 {
-  "name": "@yosit/windy-skill",
-  "version": "0.4.5",
-  "description": "Claude Code skill and CLI for the Windy API",
+  "name": "@yosit/windy-cli",
+  "version": "1.0.0",
+  "description": "CLI and Node.js client for the Windy API",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "windy-skill": "bin/windy-skill.js",
     "windy": "dist/cli.js"
   },
   "files": [
-    "bin/",
     "dist/",
     "skills/",
     "README.md"

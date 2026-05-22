@@ -60,8 +60,6 @@ src/
   types.ts      # TypeScript interfaces for all response shapes
   formatters.ts # json (default) + toon output
   index.ts      # Public API exports
-bin/
-  windy-skill.js  # shebang wrapper
 ```
 
 ## Architecture

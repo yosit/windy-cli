@@ -13,7 +13,7 @@
     "declarationMap": true,
     "sourceMap": true,
     "paths": {
-      "@yosit/windy-skill": ["../../dist/index.d.ts"],
+      "@yosit/windy-cli": ["../../dist/index.d.ts"],
       "runline": ["./src/runline-shim.d.ts"]
     },
     "baseUrl": "."

@@ -30,7 +30,7 @@ importers:
 
   plugins/dripline:
     dependencies:
-      '@yosit/windy-skill':
+      '@yosit/windy-cli':
         specifier: workspace:*
         version: link:../..
       dripline:
@@ -46,7 +46,7 @@ importers:
 
   plugins/runline:
     dependencies:
-      '@yosit/windy-skill':
+      '@yosit/windy-cli':
         specifier: workspace:*
         version: link:../..
       runline:

@@ -1,6 +1,6 @@
 {
   "name": "@yosit/runline-plugin-windy",
-  "version": "0.4.5",
+  "version": "1.0.0",
   "description": "Runline plugin exposing the windy.com API (forecasts, stations, alerts, storms, webcams, tides, geo).",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -24,7 +24,7 @@
     "node": ">=18"
   },
   "dependencies": {
-    "@yosit/windy-skill": "workspace:*"
+    "@yosit/windy-cli": "workspace:*"
   },
   "peerDependencies": {
     "runline": "*"

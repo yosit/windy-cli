@@ -33,7 +33,7 @@ import {
   WindyAPIError,
   type ClientOptions,
   type PersistedSession,
-} from "@yosit/windy-skill";
+} from "@yosit/windy-cli";
 
 type Ctx = { connection: { config: Record<string, unknown> } };
 type Input = Record<string, unknown>;
@@ -290,7 +290,7 @@ export default function windy(rl: RunlinePluginAPI) {
       model: {
         type: "string",
         required: false,
-        description: "Model identifier (manifest run id). Defaults to `ecmwf-hres`. Accepts the user-facing alias `ecmwf` and maps it to `ecmwf-hres`. Other examples: `gfs`, `icon-global`, `hrrr-conus`, `arome-france`. See MODEL_CATALOG in @yosit/windy-skill types for the full list.",
+        description: "Model identifier (manifest run id). Defaults to `ecmwf-hres`. Accepts the user-facing alias `ecmwf` and maps it to `ecmwf-hres`. Other examples: `gfs`, `icon-global`, `hrrr-conus`, `arome-france`. See MODEL_CATALOG in @yosit/windy-cli types for the full list.",
         default: "ecmwf-hres",
       },
       premium: { type: "boolean", required: false, description: "If true, request premium-tier reftimes (faster refresh cadence). Default true. Pass false to see only free-tier runs.", default: true },

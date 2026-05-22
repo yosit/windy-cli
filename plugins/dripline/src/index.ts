@@ -55,7 +55,7 @@ import {
   type FavouriteValue,
   type UserAlertItem,
   type Sounding,
-} from "@yosit/windy-skill";
+} from "@yosit/windy-cli";
 
 // ── Qual helpers ──────────────────────────────────────────────────────────
 
@@ -255,7 +255,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       { name: "days_avail", type: "number", description: "Forecast horizon available from this `ref_time`, days. Premium accounts usually see more days for ECMWF (15 vs 10)." },
       { name: "step_h", type: "number", description: "Hours per sample in the time-series (1 = hourly, 3 = 3-hourly, 24 = daily)." },
       { name: "has_waves", type: "boolean", description: "True if the underlying model produced wave fields (ECMWF / GFS waves). Use to know whether wave-specific overlays would be available." },
-      { name: "header_raw", type: "json", description: "Full response header as JSON — useful when you need fields not surfaced as columns (e.g. `celestial`, model metadata). Top-level keys: see ForecastHeader / TideForecast['header'] in @yosit/windy-skill." },
+      { name: "header_raw", type: "json", description: "Full response header as JSON — useful when you need fields not surfaced as columns (e.g. `celestial`, model metadata). Top-level keys: see ForecastHeader / TideForecast['header'] in @yosit/windy-cli." },
     ],
     keyColumns: [
       { name: "lat", required: "required" },
@@ -405,7 +405,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       { name: "elevation_m", type: "number", description: "Terrain elevation at the requested coord, meters above MSL." },
       { name: "sunrise_ms", type: "number", description: "Today's sunrise at the location, unix milliseconds UTC." },
       { name: "sunset_ms", type: "number", description: "Today's sunset at the location, unix milliseconds UTC." },
-      { name: "header_raw", type: "json", description: "Full response header as JSON — useful when you need fields not surfaced as columns (e.g. `celestial`, model metadata). Top-level keys: see ForecastHeader / TideForecast['header'] in @yosit/windy-skill." },
+      { name: "header_raw", type: "json", description: "Full response header as JSON — useful when you need fields not surfaced as columns (e.g. `celestial`, model metadata). Top-level keys: see ForecastHeader / TideForecast['header'] in @yosit/windy-cli." },
     ],
     keyColumns: [
       { name: "lat", required: "required" },
@@ -476,7 +476,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       { name: "wind_dir_deg", type: "number", description: "Wind FROM direction, meteorological degrees. 0/360 = from N, 90 = from E, 180 = from S, 270 = from W." },
       { name: "tz_name", type: "string", description: "IANA timezone of the location (e.g. `Asia/Jerusalem`). All `ts_ms` values are still UTC — use this for local-time display only." },
       { name: "step_h", type: "number", description: "Hours per sample in the time-series (1 = hourly, 3 = 3-hourly, 24 = daily)." },
-      { name: "header_raw", type: "json", description: "Full response header as JSON — useful when you need fields not surfaced as columns (e.g. `celestial`, model metadata). Top-level keys: see ForecastHeader / TideForecast['header'] in @yosit/windy-skill." },
+      { name: "header_raw", type: "json", description: "Full response header as JSON — useful when you need fields not surfaced as columns (e.g. `celestial`, model metadata). Top-level keys: see ForecastHeader / TideForecast['header'] in @yosit/windy-cli." },
     ],
     keyColumns: [
       { name: "lat", required: "required" },
@@ -571,7 +571,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       // metadata
       { name: "tz_name", type: "string", description: "IANA timezone of the location (e.g. `Asia/Jerusalem`). All `ts_ms` values are still UTC — use this for local-time display only." },
       { name: "step_h", type: "number", description: "Hours per sample in the time-series (1 = hourly, 3 = 3-hourly, 24 = daily)." },
-      { name: "header_raw", type: "json", description: "Full response header as JSON — useful when you need fields not surfaced as columns (e.g. `celestial`, model metadata). Top-level keys: see ForecastHeader / TideForecast['header'] in @yosit/windy-skill." },
+      { name: "header_raw", type: "json", description: "Full response header as JSON — useful when you need fields not surfaced as columns (e.g. `celestial`, model metadata). Top-level keys: see ForecastHeader / TideForecast['header'] in @yosit/windy-cli." },
     ],
     keyColumns: [
       { name: "lat", required: "required" },
@@ -675,7 +675,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       { name: "co", type: "number", description: "Carbon monoxide concentration, mg/m³ (note: CO units differ from other pollutants)." },
       { name: "aqi", type: "number", description: "Air Quality Index (US EPA scale typically). 0–50 good, 51–100 moderate, 101–150 unhealthy for sensitive, 151–200 unhealthy, 201–300 very unhealthy, 301+ hazardous." },
       { name: "aod550", type: "number", description: "Aerosol optical depth at 550 nm — proxy for haze / aerosol load. Dimensionless." },
-      { name: "header_raw", type: "json", description: "Full response header as JSON — useful when you need fields not surfaced as columns (e.g. `celestial`, model metadata). Top-level keys: see ForecastHeader / TideForecast['header'] in @yosit/windy-skill." },
+      { name: "header_raw", type: "json", description: "Full response header as JSON — useful when you need fields not surfaced as columns (e.g. `celestial`, model metadata). Top-level keys: see ForecastHeader / TideForecast['header'] in @yosit/windy-cli." },
     ],
     keyColumns: [
       { name: "lat", required: "required" },
@@ -1278,7 +1278,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       { name: "ts_ms", type: "number", description: "Sample timestamp, unix milliseconds UTC." },
       { name: "ts", type: "datetime", description: "Sample timestamp as ISO-8601 (parallel column to `ts_ms`)." },
       { name: "height_m", type: "number", description: "Tide height above chart datum, meters. Chart datum is typically the lowest astronomical tide (LAT)." },
-      { name: "header_raw", type: "json", description: "Full response header as JSON — useful when you need fields not surfaced as columns (e.g. `celestial`, model metadata). Top-level keys: see ForecastHeader / TideForecast['header'] in @yosit/windy-skill." },
+      { name: "header_raw", type: "json", description: "Full response header as JSON — useful when you need fields not surfaced as columns (e.g. `celestial`, model metadata). Top-level keys: see ForecastHeader / TideForecast['header'] in @yosit/windy-cli." },
     ],
     keyColumns: [
       { name: "query_lat", required: "optional" },

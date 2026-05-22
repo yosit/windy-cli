@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 // Import from the built artifact so the prototype we stub is the SAME class
-// the plugins receive via `@yosit/windy-skill` (resolved through pnpm workspace
+// the plugins receive via `@yosit/windy-cli` (resolved through pnpm workspace
 // to ./dist/index.js). Stubbing src/client.ts's WindyClient would have no
 // effect on the plugin code.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
