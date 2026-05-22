@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.0.0] - 2026-05-23
+
+### Breaking
+- **Package renamed** `@yosit/windy-skill` → `@yosit/windy-cli`. The old `@yosit/windy-skill` package has been removed from the GitHub Packages registry — update your `package.json` / lockfile to `@yosit/windy-cli@^1.0.0`. The GitHub repository (`yosit/windy-cli`) is unchanged.
+- **Bin removed** the legacy `windy-skill` CLI entry is gone. Use the `windy` binary (already shipped since 0.1.0).
+- **Plugin deps** `@yosit/runline-plugin-windy` and `@yosit/dripline-plugin-windy` now depend on `@yosit/windy-cli` instead of `@yosit/windy-skill`. Both bump to `1.0.0` in lock-step.
+
+### Fixed
+- **dripline forecast tables no longer silently return 0 rows on upstream failure** (#4, #8). `windy_forecast_now` / `windy_forecast_point` / `windy_forecast_summary` / `windy_forecast_sounding` / `windy_forecast_meteogram` / `windy_forecast_air_quality` now log AND rethrow client errors via a new `failTable()` helper, so SQL callers see the real error instead of an empty result.
+- **`forecast.modelManifest({ model: 'ecmwf' })` now works** (#5). The user-facing `ecmwf` alias is mapped to the manifest run id `ecmwf-hres`. Other model names pass through unchanged.
+- **`stations.nearbyTides` 404 → `[]`** (#6). The client treats an upstream 404 as "no nearby stations" and returns an empty array. `tides.point` remains the primary tide API.
+- **Login bootstrap throttle no longer trips during plugin sanity checks** (#7). Both plugins now cache `WindyClient` instances per connection config at module scope, so the JWT minted on the first call is reused across the whole batch.
+- **`windy_forecast_now` populates snapshot fields** — passes `includeNow: true` so `temp_k` / `wind_ms` / `wind_dir_deg` are filled in.
+
+### Tests
+- Regression coverage for the manifest alias, nearbyTides 404 handling, plugin client cache, and forecast-table error rethrow. 21 tests passing across 3 files.
+
 ## [0.4.0] - 2026-05-22
 
 ### Added
