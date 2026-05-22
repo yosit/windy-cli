@@ -1,3 +1,32 @@
+/**
+ * `@yosit/dripline-plugin-windy` — windy.com as SQL tables (DuckDB).
+ *
+ * What this is: a dripline plugin that exposes the windy.com API as ~30
+ * read-only SQL tables. Use when the user asks about weather forecasts,
+ * marine conditions, air quality, severe-weather alerts, tropical storms,
+ * tides, METAR/airport info, weather stations, or webcams — anywhere SQL
+ * is more ergonomic than a sequence of CLI calls.
+ *
+ * Auth (all optional — most tables work anonymously):
+ *   - `WINDY_ACCOUNT_SID` (recommended) — `_account_sid` cookie value;
+ *     long-lived; auto-refreshes a JWT on demand. Required for
+ *     `windy_account*`, `windy_favourites`, `windy_user_alerts*`,
+ *     `windy_alerts_live`.
+ *   - `WINDY_TOKEN` — pre-issued JWT (`token2`), ~48 h, no refresh.
+ *   - `WINDY_PROXY` — HTTPS proxy URL for debugging.
+ *
+ * Top tables to know:
+ *   - `windy_forecast_point` — hourly forecast time-series (long format).
+ *   - `windy_forecast_summary` — daily aggregates (max/min temp, dominant wind).
+ *   - `windy_storms` — currently-active tropical cyclones.
+ *   - `windy_alerts_cap` — government-issued severe-weather alerts.
+ *   - `windy_stations_nearby` — METAR / WMO / PWS / MADIS stations near a point.
+ *   - `windy_tides` — tide heights for the nearest port (or by tide-POI id).
+ *
+ * Units stay on the wire — temperature in Kelvin (`*_k`), wind in m/s (`*_ms`),
+ * pressure in hPa (`*_hpa`), distance in km (`*_km`), timestamps in unix ms
+ * (`*_ms`). Time-series tables also expose an ISO `ts` column for joins.
+ */
 import type { DriplinePluginAPI, QueryContext, Qual } from "dripline";
 import { randomUUID } from "crypto";
 import {
@@ -61,6 +90,8 @@ function getClient(ctx: QueryContext): WindyClient {
   const cfg = ctx.connection?.config ?? {};
   const token = str(cfg.token);
   const accountSid = str(cfg.accountSid);
+  const proxy = str(cfg.proxy);
+  if (proxy && !process.env.WINDY_PROXY) process.env.WINDY_PROXY = proxy;
   const uid = str(cfg.uid) ?? randomUUID();
   const session: PersistedSession = { uid };
   if (token) session.token = token;
@@ -145,35 +176,53 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       default: "xx",
       description: "ISO 3166-1 alpha-2 country code, lowercase.",
     },
+    proxy: {
+      type: "string",
+      required: false,
+      env: "WINDY_PROXY",
+      description:
+        "HTTPS proxy URL for debugging (e.g. http://localhost:8080). Routes all outbound traffic through the proxy.",
+    },
   });
 
   // ── windy_forecast_point ────────────────────────────────────────────────
   dl.registerTable("windy_forecast_point", {
     description:
-      "Multi-day point forecast as a long-format hourly time series. One row per timestep. Temperatures in Kelvin, wind in m/s, precip in mm, pressure in hPa.",
+      "Multi-day point forecast — one row per timestep. Use when the user asks for hour-by-hour weather (temp/wind/precip/pressure) at a coordinate. Filter by `model` (default ecmwf), `step` (1/3/6 h), `ref_time` (ISO). For daily aggregates see `windy_forecast_summary`; for upper-air see `windy_forecast_sounding`.",
     columns: [
-      { name: "lat", type: "number", description: "Query latitude (echoed)." },
-      { name: "lon", type: "number", description: "Query longitude (echoed)." },
-      { name: "model", type: "string", description: "Forecast model (e.g. ecmwf, gfs, icon)." },
-      { name: "ref_time", type: "string", description: "Model reference time (ISO)." },
-      { name: "ts_ms", type: "number", description: "Sample timestamp, unix ms UTC." },
-      { name: "ts", type: "datetime", description: "Sample timestamp, ISO." },
-      { name: "temp_k", type: "number", description: "Temperature, Kelvin." },
-      { name: "dewpoint_k", type: "number", description: "Dewpoint, Kelvin." },
-      { name: "wind_ms", type: "number", description: "Wind speed magnitude, m/s." },
-      { name: "wind_u_ms", type: "number", description: "Zonal wind, m/s (east+)." },
-      { name: "wind_v_ms", type: "number", description: "Meridional wind, m/s (north+)." },
-      { name: "wind_dir_deg", type: "number", description: "Wind FROM direction, meteorological deg." },
-      { name: "gust_ms", type: "number", description: "Gust speed, m/s." },
-      { name: "rh_pct", type: "number", description: "Relative humidity, percent." },
-      { name: "pressure_hpa", type: "number", description: "Surface pressure, hPa." },
-      { name: "precip_mm", type: "number", description: "Precip in this timestep, mm." },
-      { name: "snow_mm", type: "number", description: "Snow in this timestep, mm." },
+      { name: "lat", type: "number" },
+      { name: "lon", type: "number" },
+      { name: "model", type: "string" },
+      { name: "ref_time", type: "string" },
+      { name: "ts_ms", type: "number" },
+      { name: "ts", type: "datetime" },
+      { name: "temp_k", type: "number" },
+      { name: "dewpoint_k", type: "number" },
+      { name: "wind_ms", type: "number" },
+      { name: "wind_u_ms", type: "number" },
+      { name: "wind_v_ms", type: "number" },
+      { name: "wind_dir_deg", type: "number" },
+      { name: "gust_ms", type: "number" },
+      { name: "rh_pct", type: "number" },
+      { name: "pressure_hpa", type: "number" },
+      { name: "precip_mm", type: "number" },
+      { name: "snow_mm", type: "number" },
       { name: "clouds_low", type: "number" },
       { name: "clouds_mid", type: "number" },
       { name: "clouds_high", type: "number" },
-      { name: "cape", type: "number", description: "Convective available potential energy, J/kg." },
-      { name: "ptype", type: "number", description: "Precipitation type code." },
+      { name: "h_clouds", type: "number" },
+      { name: "cape", type: "number" },
+      { name: "ptype", type: "number" },
+      { name: "elevation_m", type: "number" },
+      { name: "model_elevation_m", type: "number" },
+      { name: "tz_name", type: "string" },
+      { name: "utc_offset_h", type: "number" },
+      { name: "sunrise_ms", type: "number" },
+      { name: "sunset_ms", type: "number" },
+      { name: "days_avail", type: "number" },
+      { name: "step_h", type: "number" },
+      { name: "has_waves", type: "boolean" },
+      { name: "header_raw", type: "json" },
     ],
     keyColumns: [
       { name: "lat", required: "required" },
@@ -193,10 +242,12 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
           refTime: qStr(ctx.quals, "ref_time"),
           step: qNum(ctx.quals, "step"),
         });
-        const model = r.header.model;
-        const refTime = r.header.refTime;
+        const h = r.header;
+        const model = h.model;
+        const refTime = h.refTime;
         const d = r.data;
         const tsArr = d.ts ?? [];
+        const headerRaw = jsonOrUndef(h);
         for (let i = 0; i < tsArr.length; i++) {
           const u = d.wind_u?.[i];
           const v = d.wind_v?.[i];
@@ -218,8 +269,19 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
             clouds_low: d.clouds_low?.[i],
             clouds_mid: d.clouds_mid?.[i],
             clouds_high: d.clouds_high?.[i],
+            h_clouds: d.hClouds?.[i],
             cape: d.cape?.[i],
             ptype: d.ptype?.[i],
+            elevation_m: h.elevation,
+            model_elevation_m: h.modelElevation,
+            tz_name: h.tzName,
+            utc_offset_h: h.utcOffset,
+            sunrise_ms: h.sunrise,
+            sunset_ms: h.sunset,
+            days_avail: h.daysAvail,
+            step_h: h.step,
+            has_waves: h.hasWaves,
+            header_raw: headerRaw,
           };
         }
       } catch (e) {
@@ -228,9 +290,73 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
     },
   });
 
+  // ── windy_forecast_summary ────────────────────────────────────────────
+  // Daily aggregates from setup=summary calls — one row per date.
+  dl.registerTable("windy_forecast_summary", {
+    description:
+      "Daily forecast summary — one row per date with max/min temp, dominant wind, weather icon. Only populated when the underlying call uses setup=summary (which this table always passes).",
+    columns: [
+      { name: "lat", type: "number" },
+      { name: "lon", type: "number" },
+      { name: "model", type: "string" },
+      { name: "ref_time", type: "string" },
+      { name: "date", type: "string" },
+      { name: "weekday", type: "string" },
+      { name: "ts_ms", type: "number" },
+      { name: "day_index", type: "number" },
+      { name: "day_of_month", type: "number" },
+      { name: "icon", type: "number" },
+      { name: "temp_max_k", type: "number" },
+      { name: "temp_min_k", type: "number" },
+      { name: "wind_ms", type: "number" },
+      { name: "wind_dir_deg", type: "number" },
+      { name: "segments", type: "number" },
+    ],
+    keyColumns: [
+      { name: "lat", required: "required" },
+      { name: "lon", required: "required" },
+      { name: "model", required: "optional" },
+      { name: "ref_time", required: "optional" },
+    ],
+    async *list(ctx) {
+      const lat = qNum(ctx.quals, "lat");
+      const lon = qNum(ctx.quals, "lon");
+      if (lat == null || lon == null) return;
+      try {
+        const c = getClient(ctx);
+        const r: PointForecast = await c.pointForecast(lat, lon, {
+          model: qStr(ctx.quals, "model"),
+          refTime: qStr(ctx.quals, "ref_time"),
+          setup: "summary",
+        });
+        const model = r.header.model;
+        const refTime = r.header.refTime;
+        for (const [date, s] of Object.entries(r.summary ?? {})) {
+          yield {
+            lat, lon, model, ref_time: refTime,
+            date,
+            weekday: s.weekday,
+            ts_ms: s.timestamp,
+            day_index: s.index,
+            day_of_month: s.day,
+            icon: s.icon,
+            temp_max_k: s.tempMax,
+            temp_min_k: s.tempMin,
+            wind_ms: s.wind,
+            wind_dir_deg: s.windDir,
+            segments: s.segments,
+          };
+        }
+      } catch (e) {
+        logErr(dl, "windy_forecast_summary", e);
+      }
+    },
+  });
+
   // ── windy_forecast_now ──────────────────────────────────────────────────
   dl.registerTable("windy_forecast_now", {
-    description: "Current-conditions snapshot at a point (single row).",
+    description:
+      "Current-conditions snapshot at a point. Single row. Use when the user wants \"right now\" weather without the full forecast time-series — temp / wind / windDir / weather icon / moon phase.",
     columns: [
       { name: "lat", type: "number" },
       { name: "lon", type: "number" },
@@ -239,8 +365,14 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       { name: "temp_k", type: "number" },
       { name: "wind_ms", type: "number" },
       { name: "wind_dir_deg", type: "number" },
-      { name: "icon", type: "number", description: "Windy weather icon code." },
-      { name: "moon_phase", type: "number", description: "0–7 moon phase index." },
+      { name: "icon", type: "number" },
+      { name: "moon_phase", type: "number" },
+      { name: "tz_name", type: "string" },
+      { name: "utc_offset_h", type: "number" },
+      { name: "elevation_m", type: "number" },
+      { name: "sunrise_ms", type: "number" },
+      { name: "sunset_ms", type: "number" },
+      { name: "header_raw", type: "json" },
     ],
     keyColumns: [
       { name: "lat", required: "required" },
@@ -258,15 +390,22 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
           model: qStr(ctx.quals, "model"),
           refTime: qStr(ctx.quals, "ref_time"),
         })) as PointForecast;
+        const h = r.header;
         yield {
           lat, lon,
-          model: r.header.model,
-          ref_time: r.header.refTime,
+          model: h?.model,
+          ref_time: h?.refTime,
           temp_k: r.now?.temp,
           wind_ms: r.now?.wind,
           wind_dir_deg: r.now?.windDir,
           icon: r.now?.icon,
           moon_phase: r.now?.moonPhase,
+          tz_name: h?.tzName,
+          utc_offset_h: h?.utcOffset,
+          elevation_m: h?.elevation,
+          sunrise_ms: h?.sunrise,
+          sunset_ms: h?.sunset,
+          header_raw: jsonOrUndef(h),
         };
       } catch (e) {
         logErr(dl, "windy_forecast_now", e);
@@ -278,7 +417,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
   // Pressure-level sounding (skew-T) — meteogram pivoted into per-(ts, level).
   dl.registerTable("windy_forecast_sounding", {
     description:
-      "Pressure-level sounding (skew-T). One row per (timestep, pressure level). Derived from the meteogram endpoint — supersedes a separate meteogram table.",
+      "Pressure-level sounding (skew-T). One row per (timestep, pressure level). Use for aviation, glider, paragliding, or any upper-air question — wind/temp/dewpoint/RH/height at 17 standard levels from surface up to 10 hPa.",
     columns: [
       { name: "lat", type: "number" },
       { name: "lon", type: "number" },
@@ -298,6 +437,9 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       { name: "wind_v_ms", type: "number" },
       { name: "wind_ms", type: "number" },
       { name: "wind_dir_deg", type: "number" },
+      { name: "tz_name", type: "string" },
+      { name: "step_h", type: "number" },
+      { name: "header_raw", type: "json" },
     ],
     keyColumns: [
       { name: "lat", required: "required" },
@@ -317,8 +459,10 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
           refTime: qStr(ctx.quals, "ref_time"),
           step: qNum(ctx.quals, "step"),
         });
-        const model = s.header.model;
-        const refTime = s.header.refTime;
+        const h = s.header;
+        const model = h.model;
+        const refTime = h.refTime;
+        const headerRaw = jsonOrUndef(h);
         for (const t of s.timesteps) {
           for (const lv of t.levels) {
             yield {
@@ -337,6 +481,9 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
               wind_v_ms: lv.wind_v,
               wind_ms: lv.wind,
               wind_dir_deg: lv.windDir,
+              tz_name: h.tzName,
+              step_h: h.step,
+              header_raw: headerRaw,
             };
           }
         }
@@ -349,7 +496,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
   // ── windy_forecast_air_quality ─────────────────────────────────────────
   dl.registerTable("windy_forecast_air_quality", {
     description:
-      "Air-quality forecast (CAMS / CAMS-Europe). One row per timestep. model=cams (global) or camsEu (Europe).",
+      "Air-quality forecast time-series (CAMS global or CAMS-Europe). One row per timestep. Use when the user asks about pollutant forecasts (NO2/O3/PM2.5/PM10/SO2/CO/AQI). For measured values at stations see `windy_station_air_quality` and `windy_stations_nearby_air_quality`.",
     columns: [
       { name: "lat", type: "number" },
       { name: "lon", type: "number" },
@@ -365,6 +512,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       { name: "co", type: "number" },
       { name: "aqi", type: "number" },
       { name: "aod550", type: "number" },
+      { name: "header_raw", type: "json" },
     ],
     keyColumns: [
       { name: "lat", required: "required" },
@@ -390,6 +538,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
         const refTime = raw.header.refTime;
         const d = raw.data;
         const tsArr = d.ts ?? [];
+        const headerRaw = jsonOrUndef(raw.header);
         for (let i = 0; i < tsArr.length; i++) {
           yield {
             lat, lon, model, ref_time: refTime,
@@ -403,6 +552,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
             co: d.co?.[i] ?? d.cosc?.[i],
             aqi: d.aqi?.[i],
             aod550: d.aod550?.[i],
+            header_raw: headerRaw,
           };
         }
       } catch (e) {
@@ -414,7 +564,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
   // ── windy_forecast_models ──────────────────────────────────────────────
   dl.registerTable("windy_forecast_models", {
     description:
-      "Forecast model manifest (raw JSON). Lists available reftimes and premium gating for a model.",
+      "Forecast model manifest (raw JSON). Use when the user asks which model runs are available, when the last run was issued, or what `ref_time` to pass to other forecast tables. Filter by `model` (default `ecmwf-hres`).",
     columns: [
       { name: "model", type: "string" },
       { name: "premium", type: "boolean" },
@@ -440,7 +590,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
   // ── windy_places (location search) ─────────────────────────────────────
   dl.registerTable("windy_places", {
     description:
-      "Location text search biased to a coordinate. bias_lat/bias_lon default to (0, 0) when omitted.",
+      "Location text search. Use to resolve a place name to (lat, lon) before calling any other windy table. Results biased toward `bias_lat`/`bias_lon` when supplied (defaults to (0,0)).",
     columns: [
       { name: "query", type: "string" },
       { name: "bias_lat", type: "number" },
@@ -498,7 +648,8 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
 
   // ── windy_geo_reverse ──────────────────────────────────────────────────
   dl.registerTable("windy_geo_reverse", {
-    description: "Reverse-geocode a coordinate. Zoom 14 ≈ neighborhood, 10 ≈ city. Single row.",
+    description:
+      "Reverse-geocode a coordinate to suburb / city / district / state / country. Single row. Use when the user has lat/lon and needs a human-readable place name. `zoom` 14 ≈ neighborhood, 10 ≈ city.",
     columns: [
       { name: "lat", type: "number" },
       { name: "lon", type: "number" },
@@ -544,7 +695,8 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
 
   // ── windy_geo_elevation ────────────────────────────────────────────────
   dl.registerTable("windy_geo_elevation", {
-    description: "Elevation in meters at a coordinate. Single row.",
+    description:
+      "Elevation in meters at a coordinate. Single row. Use for questions about altitude, hiking, terrain, or to convert pressure-altitude between AGL/MSL.",
     columns: [
       { name: "lat", type: "number" },
       { name: "lon", type: "number" },
@@ -570,7 +722,8 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
 
   // ── windy_geo_timezone ─────────────────────────────────────────────────
   dl.registerTable("windy_geo_timezone", {
-    description: "Timezone info for a coordinate at an instant (default: now).",
+    description:
+      "Timezone info for a coordinate at an instant (default: now). Use to convert UTC timestamps from forecast tables to local time, or to detect DST transitions at the location.",
     columns: [
       { name: "lat", type: "number" },
       { name: "lon", type: "number" },
@@ -609,7 +762,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
   // ── windy_stations_nearby ──────────────────────────────────────────────
   dl.registerTable("windy_stations_nearby", {
     description:
-      "Nearby weather stations (airport METAR + WMO + PWS + MADIS). Distance in km.",
+      "Nearby ground weather stations (airport METAR + WMO + PWS + MADIS). Use when the user wants OBSERVED weather (vs. forecast) at the closest reporting site. For per-station history join on `id` into `windy_station_observations`. Distance in km.",
     columns: [
       { name: "query_lat", type: "number" },
       { name: "query_lon", type: "number" },
@@ -664,7 +817,8 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
 
   // ── windy_stations_nearby_air_quality ──────────────────────────────────
   dl.registerTable("windy_stations_nearby_air_quality", {
-    description: "Nearby air-quality monitoring stations.",
+    description:
+      "Nearby measured air-quality stations (AQI snapshot). Use for OBSERVED AQ. For detailed pollutant breakdown of a single station join `id` into `windy_station_air_quality`. For forecast AQ use `windy_forecast_air_quality`.",
     columns: [
       { name: "query_lat", type: "number" },
       { name: "query_lon", type: "number" },
@@ -708,7 +862,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
   // ── windy_stations_nearby_tides ────────────────────────────────────────
   dl.registerTable("windy_stations_nearby_tides", {
     description:
-      "Nearby tide stations. Raw response varies; this table passes through the JSON list.",
+      "Nearby tide stations (POI list). Use to discover a `poi_id` to pass to `windy_tides` / `windy_tide_extremes`. The raw JSON of each row is preserved in `raw`.",
     columns: [
       { name: "query_lat", type: "number" },
       { name: "query_lon", type: "number" },
@@ -750,9 +904,11 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
 
   // ── windy_station_air_quality (POI detail) ─────────────────────────────
   dl.registerTable("windy_station_air_quality", {
-    description: "Air-quality POI detail (latest measurement). Single row.",
+    description:
+      "Detailed latest measurement from one AQ station — full pollutant breakdown (CO/NO2/O3/PM2.5/PM10/SO2 with per-pollutant AQI). Single row. Get the `id` from `windy_stations_nearby_air_quality`.",
     columns: [
       { name: "id", type: "string" },
+      { name: "type", type: "string" },
       { name: "lat", type: "number" },
       { name: "lon", type: "number" },
       { name: "name", type: "string" },
@@ -786,7 +942,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
         const c = getClient(ctx);
         const r: AirQualityPOI = await c.airQualityStation(id);
         yield {
-          id: r.id, lat: r.lat, lon: r.lon, name: r.name, time: r.time,
+          id: r.id, type: r.type, lat: r.lat, lon: r.lon, name: r.name, time: r.time,
           data_source: r.dataSource, source: r.source,
           station_id: r.stationID, rank: r.rank, quality: r.quality,
           size: r.size, diff_min: r.diff,
@@ -807,7 +963,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
   // ── windy_station_observations ─────────────────────────────────────────
   dl.registerTable("windy_station_observations", {
     description:
-      "Historical observation timeseries for a station. Long format. type ∈ {airq, ad, wmo, pws, madis}. Common parameter columns are surfaced; the full row is in `raw`.",
+      "Historical observed time-series for one station — temp / wind / gust / pressure / RH / precip. Use to backtest a forecast, build a microclimate baseline, or grab METAR history. `station_type` ∈ {airq, ad, wmo, pws, madis}. Common params surfaced as columns; full row in `raw`.",
     columns: [
       { name: "station_type", type: "string" },
       { name: "station_id", type: "string" },
@@ -887,7 +1043,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
   // Long-format heights. Use either (lat,lon) or poi_id to identify the port.
   dl.registerTable("windy_tides", {
     description:
-      "Tide height forecast. Provide either (lat, lon) for the nearest port OR poi_id for a specific tide POI. Heights in meters above chart datum.",
+      "Tide-height forecast time-series for a port. Use for sailing, fishing, or coastal-access questions. Provide (`query_lat`, `query_lon`) for nearest-port lookup OR `poi_id` (from `windy_stations_nearby_tides`). Heights in meters above chart datum.",
     columns: [
       { name: "query_lat", type: "number" },
       { name: "query_lon", type: "number" },
@@ -899,6 +1055,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       { name: "ts_ms", type: "number" },
       { name: "ts", type: "datetime" },
       { name: "height_m", type: "number" },
+      { name: "header_raw", type: "json" },
     ],
     keyColumns: [
       { name: "query_lat", required: "optional" },
@@ -919,6 +1076,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
         const portLat = num(r.header?.lat);
         const portLon = num(r.header?.lon);
         const tzName = str(r.header?.tzName);
+        const headerRaw = jsonOrUndef(r.header);
         const tsArr = r.data?.ts ?? [];
         const hArr = r.data?.height ?? [];
         for (let i = 0; i < tsArr.length; i++) {
@@ -933,6 +1091,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
             ts_ms: tsArr[i],
             ts: isoFromMs(tsArr[i]),
             height_m: hArr[i],
+            header_raw: headerRaw,
           };
         }
       } catch (e) {
@@ -944,7 +1103,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
   // ── windy_tide_extremes ────────────────────────────────────────────────
   dl.registerTable("windy_tide_extremes", {
     description:
-      "Tide high/low extremes. Same key columns as windy_tides — provide (lat, lon) or poi_id. `kind` is 'high' or 'low'.",
+      "Tide high/low turning points (companion to `windy_tides`). Use when the user wants \"next high tide\" or to enumerate daily extremes — no need to scan the full timeseries. `kind` ∈ {`high`, `low`}.",
     columns: [
       { name: "query_lat", type: "number" },
       { name: "query_lon", type: "number" },
@@ -992,7 +1151,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
   // ── windy_storms ───────────────────────────────────────────────────────
   dl.registerTable("windy_storms", {
     description:
-      "Active tropical storms worldwide. One row per storm. wind_speed in m/s; strength is Saffir-Simpson category (0 = tropical depression).",
+      "Currently-active tropical cyclones worldwide — one row per named storm. Use for hurricane / typhoon / cyclone questions. `wind_speed_ms` is sustained wind; `strength` is Saffir-Simpson category (0 = tropical depression).",
     columns: [
       { name: "id", type: "string" },
       { name: "name", type: "string" },
@@ -1019,7 +1178,8 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
 
   // ── windy_storms_count ─────────────────────────────────────────────────
   dl.registerTable("windy_storms_count", {
-    description: "Count of active tropical storms (single row).",
+    description:
+      "Count of active tropical cyclones (single row). Use as a cheap probe before fetching the full `windy_storms` list.",
     columns: [{ name: "count", type: "number" }, { name: "raw", type: "json" }],
     async *list(ctx) {
       try {
@@ -1038,7 +1198,8 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
 
   // ── windy_alerts_cap ───────────────────────────────────────────────────
   dl.registerTable("windy_alerts_cap", {
-    description: "Public CAP (government-issued severe weather) alerts at a location.",
+    description:
+      "Government-issued severe-weather alerts (CAP feed) in effect at a location — flood / storm / fire / heat. Public, no auth needed. For PERSONAL alerts the user subscribed to see `windy_alerts_live`.",
     columns: [
       { name: "query_lat", type: "number" },
       { name: "query_lon", type: "number" },
@@ -1096,7 +1257,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
   // ── windy_alerts_live (auth) ──────────────────────────────────────────
   dl.registerTable("windy_alerts_live", {
     description:
-      "Live user alerts subscribed by the current user. Requires auth (token / accountSid).",
+      "Live alerts the SIGNED-IN user has subscribed to (push-style threshold alarms). Requires auth. For public severe-weather alerts at a location use `windy_alerts_cap`.",
     columns: [
       { name: "query_lat", type: "number" },
       { name: "query_lon", type: "number" },
@@ -1127,7 +1288,8 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
 
   // ── windy_webcams_near ─────────────────────────────────────────────────
   dl.registerTable("windy_webcams_near", {
-    description: "Webcams near a coordinate. One row per cam.",
+    description:
+      "Webcams near a coordinate — one row per cam, with current and last-daylight image URLs. Use for visual ground truth (\"what does it actually look like there?\"). For full detail of a single cam join `id` into `windy_webcam`.",
     columns: [
       { name: "query_lat", type: "number" },
       { name: "query_lon", type: "number" },
@@ -1183,7 +1345,8 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
 
   // ── windy_webcam (detail) ──────────────────────────────────────────────
   dl.registerTable("windy_webcam", {
-    description: "Webcam detail by id. Single row.",
+    description:
+      "One webcam by id (single row). Use after `windy_webcams_near` or `windy_webcams_search` to load full detail / fresh image URLs.",
     columns: [
       { name: "id", type: "number" },
       { name: "title", type: "string" },
@@ -1234,7 +1397,8 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
 
   // ── windy_webcams_search ───────────────────────────────────────────────
   dl.registerTable("windy_webcams_search", {
-    description: "Webcam text search, optionally biased by lat/lon.",
+    description:
+      "Webcam text search by name / location. Use when the user names a place (\"Eiffel Tower\", \"Big Sur\") rather than a coord. Optionally bias by `lat`/`lon`.",
     columns: [
       { name: "query", type: "string" },
       { name: "id", type: "string" },
@@ -1276,7 +1440,8 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
 
   // ── windy_airport ──────────────────────────────────────────────────────
   dl.registerTable("windy_airport", {
-    description: "Airport info by ICAO code (single row). Runways are in windy_airport_runways.",
+    description:
+      "Airport info by ICAO code — name, elevation, latest METAR + TAF, frequencies. Single row. Use for aviation context or to fetch METAR/TAF. Runways live in `windy_airport_runways`.",
     columns: [
       { name: "icao", type: "string" },
       { name: "id", type: "string" },
@@ -1286,6 +1451,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       { name: "source", type: "string" },
       { name: "home_link", type: "string" },
       { name: "wikipedia_link", type: "string" },
+      { name: "keywords", type: "string" },
       { name: "elev_ft", type: "number" },
       { name: "elev_m", type: "number" },
       { name: "scheduled_service", type: "boolean" },
@@ -1307,6 +1473,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
           source: i.source,
           home_link: i.home_link,
           wikipedia_link: i.wikipedia_link,
+          keywords: i.keywords ?? undefined,
           elev_ft: num(i.elev_ft),
           elev_m: num(i.elev_m),
           scheduled_service: i.scheduled_service === "yes",
@@ -1322,7 +1489,8 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
 
   // ── windy_airport_runways ──────────────────────────────────────────────
   dl.registerTable("windy_airport_runways", {
-    description: "Runways for an airport. One row per runway.",
+    description:
+      "Runways at an airport — one row per runway. Use for aviation route planning (`he_heading_deg`/`le_heading_deg` for wind alignment, `length_ft`/`width_ft`/`surface` for suitability).",
     columns: [
       { name: "icao", type: "string" },
       { name: "runway_id", type: "number" },
@@ -1378,7 +1546,8 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
 
   // ── windy_account (auth) ──────────────────────────────────────────────
   dl.registerTable("windy_account", {
-    description: "Current user / subscription info. Requires auth. Single row.",
+    description:
+      "Signed-in user profile + subscription state (single row). Requires auth. Use to verify auth is working, check premium tier, or fetch the user's id for joins.",
     columns: [
       { name: "auth", type: "boolean" },
       { name: "username", type: "string" },
@@ -1415,7 +1584,8 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
 
   // ── windy_favourites (auth) ───────────────────────────────────────────
   dl.registerTable("windy_favourites", {
-    description: "User's saved favourites. Requires auth.",
+    description:
+      "Coordinates the user has bookmarked in the windy app. Requires auth. Use to drive batch forecasts for places the user cares about (join lat/lon into `windy_forecast_point` or `windy_forecast_now`).",
     columns: [
       { name: "id", type: "string" },
       { name: "updated_ms", type: "number" },
@@ -1465,7 +1635,8 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
 
   // ── windy_user_alerts (auth) ──────────────────────────────────────────
   dl.registerTable("windy_user_alerts", {
-    description: "User's saved alerts. Requires auth.",
+    description:
+      "Threshold-style weather alarms the user has configured (e.g. \"wind > 10 m/s at home\"). Requires auth. For one alert by id use `windy_user_alert`. For triggered alerts in effect now use `windy_alerts_live`.",
     columns: [
       { name: "id", type: "string" },
       { name: "updated_ms", type: "number" },
@@ -1509,7 +1680,8 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
 
   // ── windy_user_alert (auth, by id) ────────────────────────────────────
   dl.registerTable("windy_user_alert", {
-    description: "A single user alert by id. Requires auth.",
+    description:
+      "One user alert by id (single row). Requires auth. Use after `windy_user_alerts` to inspect the full condition tree.",
     columns: [
       { name: "id", type: "string" },
       { name: "updated_ms", type: "number" },

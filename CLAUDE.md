@@ -29,10 +29,14 @@ pnpm lint           # tsc --noEmit
 
 windy.com uses OAuth (Google/Facebook/Apple/email). There is no programmatic username/password endpoint, so the CLI authenticates by reusing a logged-in browser's `_account_sid` cookie OR by accepting a pre-issued JWT (`token2` query param value).
 
-Env vars the client reads:
-- `WINDY_TOKEN` — pre-issued JWT, bypasses the cookie bootstrap
-- `WINDY_ACCOUNT_SID` — value of the `_account_sid` HttpOnly cookie
+**Public env vars** (the surface advertised in READMEs and plugin connection schemas):
+- `WINDY_ACCOUNT_SID` — value of the `_account_sid` HttpOnly cookie (the durable credential)
+- `WINDY_TOKEN` — pre-issued JWT, bypasses the cookie bootstrap (~48 h)
+- `WINDY_PROXY` — HTTPS proxy URL for debugging (mitmproxy / Charles / Burp). Opt-in by exact name — we deliberately do NOT honor `HTTPS_PROXY`.
+
+**Internal escape hatches** (read by the code but not advertised — for power users and tests):
 - `WINDY_UID` — override the device UUID
+- `WINDY_LANG`, `WINDY_COUNTRY` — locale overrides
 - `WINDY_HTTP_TIMEOUT` — HTTP timeout in ms (default 30000)
 
 Session persists at `~/.config/windy-cli/session.json` (mode 600). Anonymous mode (no auth) works for most public endpoints (forecasts, search, reverse, elevation, webcams, stations, air quality, storms, alerts, tides).

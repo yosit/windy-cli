@@ -1,6 +1,32 @@
 import https from 'https';
+import type { Agent } from 'https';
 import { URL } from 'url';
 import { createGunzip, createBrotliDecompress, createInflate } from 'zlib';
+
+// Lazily instantiate an HTTPS proxy agent when WINDY_PROXY is set. The env
+// var is opt-in by exact name — we don't honor the ambient HTTPS_PROXY,
+// since users frequently have one set for unrelated tools.
+let cachedProxyAgent: Agent | null | undefined;
+function getProxyAgent(): Agent | undefined {
+  if (cachedProxyAgent === undefined) {
+    const url = process.env.WINDY_PROXY?.trim();
+    if (url) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { HttpsProxyAgent } = require('https-proxy-agent') as {
+          HttpsProxyAgent: new (u: string, o?: { keepAlive?: boolean }) => Agent;
+        };
+        cachedProxyAgent = new HttpsProxyAgent(url, { keepAlive: true });
+      } catch {
+        // https-proxy-agent isn't installed — proxy support disabled.
+        cachedProxyAgent = null;
+      }
+    } else {
+      cachedProxyAgent = null;
+    }
+  }
+  return cachedProxyAgent ?? undefined;
+}
 import type {
   AccountInfo,
   AirportResponse,
@@ -1034,6 +1060,7 @@ export class WindyClient {
           method,
           headers,
           timeout: Number(process.env.WINDY_HTTP_TIMEOUT ?? 30000),
+          agent: getProxyAgent(),
         },
         (res) => {
           // Capture rotated _account_sid if present

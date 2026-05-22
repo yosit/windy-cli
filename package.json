@@ -38,7 +38,8 @@
   },
   "dependencies": {
     "@toon-format/toon": "^2.1.0",
-    "commander": "^12.1.0"
+    "commander": "^12.1.0",
+    "https-proxy-agent": "^7.0.5"
   },
   "devDependencies": {
     "@types/node": "^25.3.0",

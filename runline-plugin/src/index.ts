@@ -1,3 +1,31 @@
+/**
+ * `@yosit/runline-plugin-windy` — windy.com as typed agent actions.
+ *
+ * What this is: a runline plugin exposing the windy.com API as ~30 typed
+ * actions an agent can call directly. Use when the user asks about
+ * weather forecasts, marine, air quality, severe-weather alerts,
+ * tropical storms, tides, METAR/airports, weather stations, or webcams.
+ * For SQL-style aggregation across many points see the sibling
+ * `@yosit/dripline-plugin-windy`.
+ *
+ * Auth (all optional — most actions work anonymously):
+ *   - `WINDY_ACCOUNT_SID` (recommended) — `_account_sid` cookie value;
+ *     long-lived; auto-refreshes a JWT. Required for `account.*` and
+ *     `alerts.live`.
+ *   - `WINDY_TOKEN` — pre-issued JWT (~48 h), no refresh.
+ *   - `WINDY_PROXY` — HTTPS proxy URL for debugging.
+ *
+ * Top actions to know:
+ *   - `forecast.point` — hourly point forecast (any model).
+ *   - `forecast.now` — current-conditions snapshot.
+ *   - `forecast.sounding` — pressure-level sounding (aviation / soaring).
+ *   - `search.places` — resolve a place name to lat/lon.
+ *   - `storms.list` — active tropical cyclones.
+ *   - `alerts.cap` — public severe-weather alerts at a location.
+ *
+ * Units stay on the wire: temperature Kelvin, wind m/s, pressure hPa,
+ * timestamps unix ms UTC. Consumers convert.
+ */
 import type { RunlinePluginAPI } from "runline";
 import { randomUUID } from "crypto";
 import {
@@ -24,6 +52,9 @@ function getClient(ctx: Ctx): WindyClient {
   const cfg = ctx.connection.config;
   const token = str(cfg.token);
   const accountSid = str(cfg.accountSid);
+  // Propagate proxy URL to env so the client's lazy proxy-agent picks it up.
+  const proxy = str(cfg.proxy);
+  if (proxy && !process.env.WINDY_PROXY) process.env.WINDY_PROXY = proxy;
 
   const uid = str(cfg.uid) ?? randomUUID();
   const session: PersistedSession = { uid };
@@ -89,13 +120,19 @@ export default function windy(rl: RunlinePluginAPI) {
       description: "Stable device UUID for the `uid` query param. Auto-generated per-call if omitted.",
       env: "WINDY_UID",
     },
+    proxy: {
+      type: "string",
+      required: false,
+      description: "HTTPS proxy URL for debugging (e.g. `http://localhost:8080`). Routes all outbound traffic through the proxy.",
+      env: "WINDY_PROXY",
+    },
   });
 
   // ── Forecast ────────────────────────────────────────────────────────────
 
   rl.registerAction("forecast.point", {
     description:
-      "Multi-day point forecast. Returns hourly (or daily-summary) values for the chosen model.",
+      "Hourly multi-day forecast for one coordinate. Use when the user asks 'will it rain in N hours' or wants a temp/wind/precip series. Returns `{header, data, now, summary?}`; `data` arrays are parallel to `data.ts`. Pass `setup:'summary'` for daily aggregates.",
     inputSchema: {
       lat: { type: "number", required: true, description: "Latitude (deg)" },
       lon: { type: "number", required: true, description: "Longitude (deg)" },
@@ -138,7 +175,8 @@ export default function windy(rl: RunlinePluginAPI) {
   });
 
   rl.registerAction("forecast.now", {
-    description: "Current-conditions snapshot at a point (single timestep).",
+    description:
+      "Current-conditions snapshot at one coord — temp / wind / windDir / weather icon / moon phase. Use for 'what's the weather right now?' without paying for a full hourly series.",
     inputSchema: {
       lat: { type: "number", required: true, description: "Latitude" },
       lon: { type: "number", required: true, description: "Longitude" },
@@ -157,7 +195,8 @@ export default function windy(rl: RunlinePluginAPI) {
   });
 
   rl.registerAction("forecast.meteogram", {
-    description: "Hourly multi-parameter meteogram for a point (surface + pressure levels).",
+    description:
+      "Raw meteogram (surface + 17 pressure levels, hourly). Use only if you need fields beyond `forecast.point` (turbulence, cape, multi-level wind). For a clean per-level pivot use `forecast.sounding`.",
     inputSchema: {
       lat: { type: "number", required: true, description: "Latitude" },
       lon: { type: "number", required: true, description: "Longitude" },
@@ -178,7 +217,8 @@ export default function windy(rl: RunlinePluginAPI) {
   });
 
   rl.registerAction("forecast.airQuality", {
-    description: "Air-quality forecast at a point (CAMS global or CAMS-Europe).",
+    description:
+      "Hourly air-quality forecast (CAMS global or camsEu Europe). Use when the user asks about pollutant forecasts (NO2/O3/PM2.5/PM10/SO2/CO/AQI). For measured station data use `stations.airQualityDetail`.",
     inputSchema: {
       lat: { type: "number", required: true, description: "Latitude" },
       lon: { type: "number", required: true, description: "Longitude" },
@@ -205,7 +245,7 @@ export default function windy(rl: RunlinePluginAPI) {
 
   rl.registerAction("forecast.sounding", {
     description:
-      "Skew-T sounding (pressure-level profile) for a point. Returns per-timestep × per-level samples with derived wind speed/direction.",
+      "Pressure-level sounding (skew-T) — per-timestep × per-level samples with derived wind speed/direction. Use for aviation, glider, paragliding, or any upper-air question.",
     inputSchema: {
       lat: { type: "number", required: true, description: "Latitude" },
       lon: { type: "number", required: true, description: "Longitude" },
@@ -227,7 +267,7 @@ export default function windy(rl: RunlinePluginAPI) {
 
   rl.registerAction("forecast.modelManifest", {
     description:
-      "List available model reftimes & premium gating from the model manifest.",
+      "Available model reftimes + premium gating. Use to discover the latest `refTime` for a model before calling `forecast.point` / `forecast.meteogram` with an explicit run.",
     inputSchema: {
       model: {
         type: "string",
@@ -246,7 +286,8 @@ export default function windy(rl: RunlinePluginAPI) {
   // ── Search / geocoding ──────────────────────────────────────────────────
 
   rl.registerAction("search.places", {
-    description: "Location text search biased to a coordinate.",
+    description:
+      "Resolve a place name to (lat, lon). Use as the first step when the user names a place (\"Reykjavik\", \"Big Sur\") instead of coords. Results biased toward (`biasLat`, `biasLon`) for disambiguation.",
     inputSchema: {
       query: { type: "string", required: true, description: "Free-text query" },
       biasLat: { type: "number", required: true, description: "Bias-point latitude" },
@@ -267,7 +308,8 @@ export default function windy(rl: RunlinePluginAPI) {
   });
 
   rl.registerAction("geo.reverse", {
-    description: "Reverse geocode a coordinate. Zoom 14 ≈ neighborhood, 10 ≈ city.",
+    description:
+      "Reverse-geocode a coord to suburb / city / district / state / country. Use when you have lat/lon and need a human-readable label. `zoom` 14 ≈ neighborhood, 10 ≈ city.",
     inputSchema: {
       lat: { type: "number", required: true, description: "Latitude" },
       lon: { type: "number", required: true, description: "Longitude" },
@@ -280,19 +322,21 @@ export default function windy(rl: RunlinePluginAPI) {
   });
 
   rl.registerAction("geo.elevation", {
-    description: "Elevation in meters at a coordinate.",
+    description:
+      "Elevation in meters at a coord (returns a bare number). Use for altitude / terrain questions or pressure-altitude conversions.",
     inputSchema: {
       lat: { type: "number", required: true, description: "Latitude" },
       lon: { type: "number", required: true, description: "Longitude" },
     },
     async execute(input: Input, ctx: Ctx) {
       const c = getClient(ctx);
-      return run(async () => ({ elevationM: await c.elevation(num(input.lat)!, num(input.lon)!) }));
+      return run(() => c.elevation(num(input.lat)!, num(input.lon)!));
     },
   });
 
   rl.registerAction("geo.timezone", {
-    description: "Timezone info for a coordinate at an instant.",
+    description:
+      "Timezone metadata at a coord and instant (default: now). Use to convert UTC forecast timestamps to local time, or to detect DST transitions.",
     inputSchema: {
       lat: { type: "number", required: true, description: "Latitude" },
       lon: { type: "number", required: true, description: "Longitude" },
@@ -311,7 +355,8 @@ export default function windy(rl: RunlinePluginAPI) {
   // ── Stations / POIs ─────────────────────────────────────────────────────
 
   rl.registerAction("stations.nearby", {
-    description: "Nearby weather stations (airport METAR + WMO + PWS + MADIS).",
+    description:
+      "Nearby ground weather stations (METAR + WMO + PWS + MADIS) with latest obs. Use when the user wants OBSERVED weather (vs forecast). Feed `id` into `stations.observations` for history.",
     inputSchema: {
       lat: { type: "number", required: true, description: "Latitude" },
       lon: { type: "number", required: true, description: "Longitude" },
@@ -323,7 +368,8 @@ export default function windy(rl: RunlinePluginAPI) {
   });
 
   rl.registerAction("stations.nearbyAirQuality", {
-    description: "Nearby air-quality monitoring stations.",
+    description:
+      "Nearby measured AQ stations with current AQI snapshot. Feed `id` into `stations.airQualityDetail` for the full pollutant breakdown. For forecast AQ use `forecast.airQuality`.",
     inputSchema: {
       lat: { type: "number", required: true, description: "Latitude" },
       lon: { type: "number", required: true, description: "Longitude" },
@@ -335,7 +381,8 @@ export default function windy(rl: RunlinePluginAPI) {
   });
 
   rl.registerAction("stations.nearbyTides", {
-    description: "Nearby tide stations.",
+    description:
+      "Nearby tide POIs (port list). Use to discover a `poiId` to pass to `tides.byPoi`. If you just want tides at a coord, `tides.point` is enough.",
     inputSchema: {
       lat: { type: "number", required: true, description: "Latitude" },
       lon: { type: "number", required: true, description: "Longitude" },
@@ -347,7 +394,8 @@ export default function windy(rl: RunlinePluginAPI) {
   });
 
   rl.registerAction("stations.airQualityDetail", {
-    description: "Air-quality POI detail (latest measurement).",
+    description:
+      "Full latest measurement at one AQ station — every pollutant + its per-pollutant AQI. Use after `stations.nearbyAirQuality` once you've picked an `id`.",
     inputSchema: {
       id: { type: "string", required: true, description: "Station id (with or without `airq-` prefix)." },
     },
@@ -358,7 +406,8 @@ export default function windy(rl: RunlinePluginAPI) {
   });
 
   rl.registerAction("stations.observations", {
-    description: "Historical observation timeseries for a station.",
+    description:
+      "Historical observation time-series for one station — temp / wind / gust / pressure / RH / precip. Use to backtest a forecast or build a microclimate baseline. `type` ∈ {airq, ad, wmo, pws, madis}.",
     inputSchema: {
       type: {
         type: "string",
@@ -396,7 +445,8 @@ export default function windy(rl: RunlinePluginAPI) {
   // ── Tides ───────────────────────────────────────────────────────────────
 
   rl.registerAction("tides.point", {
-    description: "Tide forecast for the nearest port to a coordinate.",
+    description:
+      "Tide-height forecast at the port nearest a coord. Use for sailing / fishing / coastal-access questions. For a specific port use `tides.byPoi`. Returns `{header, data, extremes}` — `data.height` parallels `data.ts`.",
     inputSchema: {
       lat: { type: "number", required: true, description: "Latitude" },
       lon: { type: "number", required: true, description: "Longitude" },
@@ -408,7 +458,8 @@ export default function windy(rl: RunlinePluginAPI) {
   });
 
   rl.registerAction("tides.byPoi", {
-    description: "Tide forecast by tide-POI id.",
+    description:
+      "Tide-height forecast for a specific tide-POI. Use after `stations.nearbyTides` returns a `poiId` you want to pin to.",
     inputSchema: {
       poiId: { type: "string", required: true, description: "Tide POI id." },
     },
@@ -422,7 +473,7 @@ export default function windy(rl: RunlinePluginAPI) {
 
   rl.registerAction("alerts.cap", {
     description:
-      "Public CAP (government-issued severe weather) alerts at a location.",
+      "Government-issued severe-weather alerts (CAP) in effect at a location — flood / storm / fire / heat. Public, no auth. For PERSONAL alerts the user subscribed to see `alerts.live`.",
     inputSchema: {
       lat: { type: "number", required: true, description: "Latitude" },
       lon: { type: "number", required: true, description: "Longitude" },
@@ -437,7 +488,8 @@ export default function windy(rl: RunlinePluginAPI) {
   });
 
   rl.registerAction("alerts.live", {
-    description: "Live alerts subscribed by the current user (requires auth).",
+    description:
+      "Live alerts the SIGNED-IN user subscribed to (push-style threshold alarms). Requires auth. For public severe-weather at a location use `alerts.cap`.",
     inputSchema: {
       lat: { type: "number", required: true, description: "Latitude" },
       lon: { type: "number", required: true, description: "Longitude" },
@@ -459,7 +511,8 @@ export default function windy(rl: RunlinePluginAPI) {
   // ── Storms ──────────────────────────────────────────────────────────────
 
   rl.registerAction("storms.list", {
-    description: "Active tropical storms worldwide.",
+    description:
+      "Currently-active tropical cyclones worldwide. Use for hurricane / typhoon / cyclone questions. Returns `{storms, models, defaultCircles}`; storm `strength` is Saffir-Simpson category (0 = tropical depression).",
     inputSchema: {},
     async execute(_input: Input, ctx: Ctx) {
       const c = getClient(ctx);
@@ -468,7 +521,8 @@ export default function windy(rl: RunlinePluginAPI) {
   });
 
   rl.registerAction("storms.count", {
-    description: "Count of active tropical storms.",
+    description:
+      "Cheap probe — count of active tropical cyclones. Use before fetching the full `storms.list` if you only need a number.",
     inputSchema: {},
     async execute(_input: Input, ctx: Ctx) {
       const c = getClient(ctx);
@@ -479,7 +533,8 @@ export default function windy(rl: RunlinePluginAPI) {
   // ── Webcams ─────────────────────────────────────────────────────────────
 
   rl.registerAction("webcams.near", {
-    description: "Webcams near a coordinate.",
+    description:
+      "Webcams near a coord with current image URLs. Use for visual ground truth (\"what does it actually look like there?\"). For full detail use `webcams.detail`.",
     inputSchema: {
       lat: { type: "number", required: true, description: "Latitude" },
       lon: { type: "number", required: true, description: "Longitude" },
@@ -506,7 +561,8 @@ export default function windy(rl: RunlinePluginAPI) {
   });
 
   rl.registerAction("webcams.detail", {
-    description: "Webcam detail by id.",
+    description:
+      "Full detail for one webcam by id (location, freshest image URLs). Use after `webcams.near` or `webcams.search` to grab a high-res frame.",
     inputSchema: {
       id: { type: "string", required: true, description: "Webcam id." },
       imageSize: {
@@ -530,7 +586,8 @@ export default function windy(rl: RunlinePluginAPI) {
   });
 
   rl.registerAction("webcams.search", {
-    description: "Webcam text search (admin), optionally biased by lat/lon.",
+    description:
+      "Webcam text search by name / location. Use when the user names a place (\"Eiffel Tower\", \"Big Sur\") instead of giving coords.",
     inputSchema: {
       query: { type: "string", required: true, description: "Search text." },
       lat: { type: "number", required: false, description: "Bias latitude." },
@@ -547,7 +604,8 @@ export default function windy(rl: RunlinePluginAPI) {
   // ── Airports ────────────────────────────────────────────────────────────
 
   rl.registerAction("airports.info", {
-    description: "Airport info by ICAO code — runways, METAR, TAF, metadata.",
+    description:
+      "Airport info by ICAO — name, elevation, runways (with headings + surface), latest METAR/TAF, frequencies. Use for aviation context (alternate planning, METAR/TAF lookup, runway alignment with surface wind).",
     inputSchema: {
       icao: { type: "string", required: true, description: "ICAO code (e.g. KJFK, EGLL, LLBG)." },
     },
@@ -560,7 +618,8 @@ export default function windy(rl: RunlinePluginAPI) {
   // ── Account ─────────────────────────────────────────────────────────────
 
   rl.registerAction("account.whoami", {
-    description: "Current user info / subscription.",
+    description:
+      "Signed-in user profile + subscription state. Use to verify auth is wired up, check premium tier, or grab the user id.",
     inputSchema: {},
     async execute(_input: Input, ctx: Ctx) {
       const c = getClient(ctx);
@@ -569,7 +628,8 @@ export default function windy(rl: RunlinePluginAPI) {
   });
 
   rl.registerAction("account.favourites", {
-    description: "List the user's favourites (requires auth).",
+    description:
+      "Coordinates the user has bookmarked in the windy app. Requires auth. Use to drive batch forecasts for places the user cares about.",
     inputSchema: {},
     async execute(_input: Input, ctx: Ctx) {
       const c = getClient(ctx);
@@ -585,6 +645,10 @@ export default function windy(rl: RunlinePluginAPI) {
       title: { type: "string", required: false, description: "Display title." },
       name: { type: "string", required: false, description: "Internal name." },
       type: { type: "string", required: false, description: "Favourite type (e.g. `fav`)." },
+      cc: { type: "string", required: false, description: "ISO 3166-1 alpha-2 country code." },
+      note: { type: "string", required: false, description: "User-supplied note." },
+      pin: { type: "boolean", required: false, description: "Pin to top of favourites list." },
+      pinOrder: { type: "number", required: false, description: "Sort order among pinned favourites (lower = higher)." },
     },
     async execute(input: Input, ctx: Ctx) {
       const c = getClient(ctx);
@@ -595,6 +659,10 @@ export default function windy(rl: RunlinePluginAPI) {
       if (str(input.title)) value.title = str(input.title);
       if (str(input.name)) value.name = str(input.name);
       if (str(input.type)) value.type = str(input.type);
+      if (str(input.cc)) value.cc = str(input.cc);
+      if (str(input.note)) value.note = str(input.note);
+      if (bool(input.pin) !== undefined) value.pin = bool(input.pin);
+      if (num(input.pinOrder) !== undefined) value.pinOrder = num(input.pinOrder);
       return run(() => c.addFavourite(value as Parameters<WindyClient["addFavourite"]>[0]));
     },
   });
