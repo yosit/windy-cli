@@ -279,21 +279,65 @@ export interface NearbyWeatherStation {
 
 // ── Observations timeseries ───────────────────────────────────────────────
 
+/**
+ * Nested observation-metrics block that windy attaches to the obs header.
+ * Counts and frequencies are server-computed over the returned window.
+ */
+export interface ObservationMetrics {
+  /** Total observation records in the returned series. */
+  records: number;
+  /** Average delay (minutes) between observation publish time and the timestamp it reports. */
+  avgDelayMin: number;
+  /** Average frequency (minutes) between consecutive observations. */
+  avgFreqMin: number;
+  /** ISO-8601 UTC timestamp of the latest observation in the series. */
+  latestObs: string;
+}
+
+/**
+ * Observation series header. Phase 4b sampling (3 AD airports + a PWS) shows
+ * the header is much richer than the legacy fields below — `source_name`,
+ * `subtype`, `avg_delay_min`, `obs_count`, `latest_obs`, `desc`, `observation`
+ * (nested), `duplicityId`/`duplicityType` are all consistently present.
+ */
 export interface ObservationHeader {
   lat: number;
   lon: number;
   name: string;
-  /** ISO Z */
+  /** ISO Z — when windy last refreshed this series. */
   updated: string;
   id: string;
+  /** `1` for airport stations, `0` otherwise. Server returns the numeric. */
   is_airport: 0 | 1;
+  /** Total records in the returned series (matches `observation.records`). */
   size: number;
+  /** Magnetic declination at the station, degrees. */
   declination: number;
-  dataSource: string;
+  /** `dataSource` is the legacy field name; modern responses use `source_name` (e.g. `adds`, `noaa`). Either may be present depending on station type. */
+  dataSource?: string;
+  /** Upstream feed identifier (e.g. `adds`, `noaa`). Phase 4b shows this is the modern field — `dataSource` is the legacy name. */
+  source_name?: string;
+  /** Station-subtype classification mirroring the airport classification (e.g. `large_airport`). Same value as `desc` on AD rows. */
+  subtype?: string;
+  /** Average observation publish-delay, minutes (duplicates `observation.avgDelayMin`). */
+  avg_delay_min?: number;
+  /** Count of obs records in the series (duplicates `size`). */
+  obs_count?: number;
+  /** ISO-8601 UTC of the latest observation (duplicates `observation.latestObs`). */
+  latest_obs?: string;
+  /** Free-form description string. For AD rows it equals `subtype`. */
+  desc?: string;
+  /** Nested metrics block — see ObservationMetrics. Present on all sampled AD rows. */
+  observation?: ObservationMetrics;
+  /** Id of a related station record (e.g. the WMO synoptic that mirrors this airport's METAR). */
+  duplicityId?: string;
+  /** Type of the related station (`wmo`, `ad`, …). */
+  duplicityType?: string;
+  /** Other station IDs in this duplicate group (excludes the row's own id; intersects with duplicityId). */
   duplicates: string[];
-  /** hours per sample */
+  /** Hours per sample. */
   step: number;
-  /** unix ms */
+  /** Unix ms — start of the returned window. */
   start: number;
   type: StationType | 'airq';
 }

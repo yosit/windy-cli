@@ -770,7 +770,43 @@ Real `obs.data` keys (from `c.observations('ad','LLBG',3,1)`):
 
 Critical mismatch I fixed: I had a column `dir` mapped to `rowJson.dir` — but the wire key is `windDir` (camelCase). Renamed column to `wind_dir`, added a fallback alias chain `windDir ?? wind_dir ?? dir` for safety. Also added `dew_point`, `visibility`, `weathercode`, `category` columns that were previously buried in `raw`.
 
-Header has ~21 keys (not just the 8 in the `ObservationHeader` interface): `subtype`, `is_airport`, `avg_delay_min`, `obs_count`, `latest_obs`, `desc`, `observation`, `duplicityId`, `duplicityType`, etc. Not currently surfaced as columns — accessible via `header_raw` (TODO: add for obs table).
+Header has ~21 keys (not just the 8 in the legacy `ObservationHeader` interface). Phase 4b across 3 AD airports + 1 PWS confirmed all are consistently present on AD rows:
+
+```json
+{
+  "lat": 40.6392, "lon": -73.7639,
+  "source_name": "adds",
+  "name": "John F. Kennedy International Airport",
+  "updated": "2026-05-22T19:32:45.748Z",
+  "id": "KJFK",
+  "subtype": "large_airport",
+  "is_airport": 1,
+  "avg_delay_min": 8,
+  "obs_count": 187,
+  "latest_obs": "2026-05-22T18:51:00.000Z",
+  "desc": "large_airport",
+  "size": 187,
+  "declination": -12.574288637914059,
+  "start": 1779336000000,
+  "observation": {
+    "records": 187,
+    "avgDelayMin": 8,
+    "avgFreqMin": 53.903743315508024,
+    "latestObs": "2026-05-22T18:51:00.000Z"
+  },
+  "duplicityId": "74486",
+  "duplicityType": "wmo",
+  "duplicates": ["74486"],
+  "step": 3,
+  "type": "ad"
+}
+```
+
+Resolution (2026-05-22):
+
+1. **TypeScript:** Expanded `ObservationHeader` in `src/types.ts` with `source_name`, `subtype`, `avg_delay_min`, `obs_count`, `latest_obs`, `desc`, `duplicityId`, `duplicityType`, and a new nested `ObservationMetrics` type for the `observation` block. `dataSource` kept as optional alias for back-compat (modern responses send `source_name`).
+2. **Dripline table:** `windy_station_observations` now surfaces 15 `station_*` columns derived from the header (source_name, subtype, is_airport boolean, avg_delay_min, obs_count, latest_obs_ms, avg_freq_min, declination_deg, step_h, updated_ms, duplicity_id, duplicity_type, duplicates JSON) plus a `station_header_raw` JSON column. Same on every row of a single series (long-format consistency with forecast tables).
+3. **Verified** by live-smoking KJFK obs — every new column populated with sensible values (e.g. `station_avg_freq_min: 53.9` for KJFK's ~hourly METAR cadence).
 
 ### Airports / runways
 

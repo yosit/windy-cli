@@ -1096,9 +1096,23 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
     columns: [
       { name: "station_type", type: "string", description: "Station network. One of: `airq`, `ad`, `wmo`, `pws`, `madis`. Echoed from the WHERE filter." },
       { name: "station_id", type: "string", description: "Station id (without type prefix). Echoed from the WHERE filter." },
-      { name: "station_name", type: "string", description: "Display name of the station (e.g. \"TEL AVIV / BEN GURION\")." },
+      { name: "station_name", type: "string", description: "Display name of the station (e.g. \"Ben Gurion International Airport\")." },
       { name: "lat", type: "number", description: "Station latitude, decimal degrees, WGS-84." },
       { name: "lon", type: "number", description: "Station longitude, decimal degrees, WGS-84." },
+      { name: "station_source_name", type: "string", description: "Upstream feed identifier. Phase 4b observed: `adds` (NOAA ADDS METAR), `noaa` (NWS), `openaq.org`, `PurpleAir`. Same on every row of a single series." },
+      { name: "station_subtype", type: "string", description: "Station-subtype classification. For airports: `large_airport` / `medium_airport` / `small_airport` / `heliport` / `seaplane_base`. Empty for non-airport networks." },
+      { name: "station_is_airport", type: "boolean", description: "True if this is an airport METAR reporter (server returns `1`/`0`; plugin converts). Reliable here in the obs header (unlike `windy_stations_nearby.is_airport` which is always null)." },
+      { name: "station_avg_delay_min", type: "number", description: "Average publish-delay between observation time and when it appears in the feed, minutes. Higher = staler data." },
+      { name: "station_obs_count", type: "number", description: "Total observation records returned in this window. Same on every row of a single series." },
+      { name: "station_latest_obs_ms", type: "number", description: "Most recent observation timestamp the station has reported, unix milliseconds UTC. Compare to `NOW()` to detect offline stations." },
+      { name: "station_avg_freq_min", type: "number", description: "Average gap between consecutive observations, minutes. METAR airports ≈ 30; high-freq PWS can be <10." },
+      { name: "station_declination_deg", type: "number", description: "Magnetic declination at the station, decimal degrees (signed; positive = E, negative = W). Add to magnetic headings to get true headings." },
+      { name: "station_step_h", type: "number", description: "Server's sampling step for this series, hours. Echoes the `step` WHERE filter (typically 1, 3, or 24)." },
+      { name: "station_updated_ms", type: "number", description: "When windy last refreshed this series, unix milliseconds UTC. Distinct from `station_latest_obs_ms` (the underlying obs time)." },
+      { name: "station_duplicity_id", type: "string", description: "Id of a related station record (e.g. the WMO synoptic that mirrors this airport's METAR). Join in `windy_station_observations` to compare paired feeds." },
+      { name: "station_duplicity_type", type: "string", description: "Network of the related station. Phase 4b observed: `wmo` on AD airport rows (a paired synoptic report)." },
+      { name: "station_duplicates", type: "json", description: "JSON array of related-station IDs (excludes the row's own id; intersects with `station_duplicity_id`). Empty array when no duplicates." },
+      { name: "station_header_raw", type: "json", description: "Full header object as JSON — preserves any field not surfaced as a column (`desc`, `start`, `observation` block, vendor extensions). Same on every row of a single series." },
       { name: "ts_ms", type: "number", description: "Observation timestamp, unix milliseconds UTC." },
       { name: "ts", type: "datetime", description: "Observation timestamp as ISO-8601." },
       { name: "temp", type: "number", description: "Observed temperature. Units depend on `station_type`: METAR (`ad`) typically °C; PWS may report °C or °F — check `raw` if unsure." },
@@ -1139,9 +1153,33 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
         );
         const d = obs.data;
         const tsArr = d.ts ?? [];
-        const name = obs.header?.name;
-        const lat = obs.header?.lat;
-        const lon = obs.header?.lon;
+        const h = obs.header ?? ({} as Record<string, unknown>);
+        // Precompute header-derived columns (same on every row of this series).
+        const name = h.name as string | undefined;
+        const lat = h.lat as number | undefined;
+        const lon = h.lon as number | undefined;
+        const sourceName = (h.source_name as string | undefined) ?? (h.dataSource as string | undefined);
+        const subtype = h.subtype as string | undefined;
+        const isAirport = h.is_airport === 1 ? true : h.is_airport === 0 ? false : undefined;
+        const observation = (h.observation as { records?: number; avgDelayMin?: number; avgFreqMin?: number; latestObs?: string } | undefined) ?? undefined;
+        const avgDelayMin = num(h.avg_delay_min ?? observation?.avgDelayMin);
+        const obsCount = num(h.obs_count ?? observation?.records ?? h.size);
+        const latestObsMs = (() => {
+          const v = (h.latest_obs as string | undefined) ?? observation?.latestObs;
+          return v ? Date.parse(v) : undefined;
+        })();
+        const avgFreqMin = num(observation?.avgFreqMin);
+        const declinationDeg = num(h.declination);
+        const stepH = num(h.step);
+        const updatedMs = (() => {
+          const v = h.updated as string | undefined;
+          return v ? Date.parse(v) : undefined;
+        })();
+        const duplicityId = h.duplicityId as string | undefined;
+        const duplicityType = h.duplicityType as string | undefined;
+        const duplicates = Array.isArray(h.duplicates) ? jsonOrUndef(h.duplicates) : undefined;
+        const headerRaw = jsonOrUndef(h);
+
         for (let i = 0; i < tsArr.length; i++) {
           const rowJson: Record<string, unknown> = { ts_ms: tsArr[i] };
           for (const [k, arr] of Object.entries(d)) {
@@ -1153,6 +1191,20 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
             station_id: id,
             station_name: name,
             lat, lon,
+            station_source_name: sourceName,
+            station_subtype: subtype,
+            station_is_airport: isAirport,
+            station_avg_delay_min: avgDelayMin,
+            station_obs_count: obsCount,
+            station_latest_obs_ms: latestObsMs,
+            station_avg_freq_min: avgFreqMin,
+            station_declination_deg: declinationDeg,
+            station_step_h: stepH,
+            station_updated_ms: updatedMs,
+            station_duplicity_id: duplicityId,
+            station_duplicity_type: duplicityType,
+            station_duplicates: duplicates,
+            station_header_raw: headerRaw,
             ts_ms: tsArr[i],
             ts: isoFromMs(tsArr[i]),
             temp: num(rowJson.temp),
