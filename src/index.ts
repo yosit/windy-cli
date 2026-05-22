@@ -6,7 +6,12 @@ export {
   sessionPath,
   decodeJWT,
   tokenIsStale,
+  isSessionReusable,
+  recordLoginAttempt,
+  loginHistoryPath,
+  startKeepalive,
   type PersistedSession,
+  type KeepaliveOptions,
 } from './session';
 export * from './types';
 export {

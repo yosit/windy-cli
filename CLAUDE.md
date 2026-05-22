@@ -11,7 +11,7 @@ The CLI lets Claude (and humans) interact with windy.com as if using the web app
 
 - **Runtime**: Node.js ≥16, TypeScript, pnpm
 - **CLI framework**: commander
-- **Output format**: toon (default, `@toon-format/toon`) + JSON (`--format json`)
+- **Output format**: JSON (default) + toon (`--format toon`, `@toon-format/toon`)
 - **Tests**: vitest
 - **Build**: `tsc`
 
@@ -58,7 +58,7 @@ src/
   client.ts     # WindyClient — one method per endpoint; https only
   session.ts    # ~/.config/windy-cli/session.json persistence + JWT decode
   types.ts      # TypeScript interfaces for all response shapes
-  formatters.ts # toon (default) + json output
+  formatters.ts # json (default) + toon output
   index.ts      # Public API exports
 bin/
   windy-skill.js  # shebang wrapper

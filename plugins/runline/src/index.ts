@@ -134,8 +134,8 @@ export default function windy(rl: RunlinePluginAPI) {
     description:
       "Hourly multi-day forecast for one coordinate. Use when the user asks 'will it rain in N hours' or wants a temp/wind/precip series. Returns `{header, data, now, summary?}`; `data` arrays are parallel to `data.ts`. Pass `setup:'summary'` for daily aggregates.",
     inputSchema: {
-      lat: { type: "number", required: true, description: "Latitude (deg)" },
-      lon: { type: "number", required: true, description: "Longitude (deg)" },
+      lat: { type: "number", required: true, description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N). Example: 32.0853 for Tel Aviv." },
+      lon: { type: "number", required: true, description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E). Example: 34.7818 for Tel Aviv." },
       model: {
         type: "string",
         required: false,
@@ -145,18 +145,18 @@ export default function windy(rl: RunlinePluginAPI) {
       refTime: {
         type: "string",
         required: false,
-        description: "Model run ISO timestamp. Omit for latest.",
+        description: "ISO-8601 model-run timestamp (e.g. `2026-05-13T12:00:00Z`). Omit for the latest run.",
       },
       setup: {
         type: "string",
         required: false,
-        description: "`summary` returns daily aggregates; omit for full hourly.",
+        description: "Output shape. Only valid value is `summary`, which adds a per-day aggregate block (max/min temp, dominant wind, weather icon). Omit for the full hourly time-series.",
         enum: ["summary"],
       },
-      includeNow: { type: "boolean", required: false, description: "Include current-conditions row." },
-      step: { type: "number", required: false, description: "Hours per sample (1, 3, 6)." },
-      interpolate: { type: "boolean", required: false, description: "Spatially interpolate between grid cells." },
-      extended: { type: "boolean", required: false, description: "Extended-range output (where available)." },
+      includeNow: { type: "boolean", required: false, description: "If true, the response includes a `now` snapshot alongside the time-series. Default false." },
+      step: { type: "number", required: false, description: "Hours per sample. `3` is the free-tier default, `1` is hourly (premium for first 90–120 h on ECMWF/GFS), `6` for sparser series." },
+      interpolate: { type: "boolean", required: false, description: "If true, the server spatially interpolates between grid cells instead of returning the nearest gridpoint. Default false." },
+      extended: { type: "boolean", required: false, description: "If true, request the extended-horizon output (ECMWF: 15 days for premium vs 10 days free). Default false." },
     },
     async execute(input: Input, ctx: Ctx) {
       const c = getClient(ctx);
@@ -178,10 +178,10 @@ export default function windy(rl: RunlinePluginAPI) {
     description:
       "Current-conditions snapshot at one coord — temp / wind / windDir / weather icon / moon phase. Use for 'what's the weather right now?' without paying for a full hourly series.",
     inputSchema: {
-      lat: { type: "number", required: true, description: "Latitude" },
-      lon: { type: "number", required: true, description: "Longitude" },
-      model: { type: "string", required: false, description: "Forecast model.", default: "ecmwf" },
-      refTime: { type: "string", required: false, description: "Model run timestamp." },
+      lat: { type: "number", required: true, description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N). Example: 32.0853." },
+      lon: { type: "number", required: true, description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E). Example: 34.7818." },
+      model: { type: "string", required: false, default: "ecmwf", description: "Forecast model id. Common: `ecmwf` (default, global 9 km), `gfs`, `icon`, `iconEu`, `hrrrConus`, `arome`. Full catalog via `forecast.modelManifest`." },
+      refTime: { type: "string", required: false, description: "ISO-8601 model-run timestamp (e.g. `2026-05-13T12:00:00Z`). Omit for the latest run." },
     },
     async execute(input: Input, ctx: Ctx) {
       const c = getClient(ctx);
@@ -198,11 +198,11 @@ export default function windy(rl: RunlinePluginAPI) {
     description:
       "Raw meteogram (surface + 17 pressure levels, hourly). Use only if you need fields beyond `forecast.point` (turbulence, cape, multi-level wind). For a clean per-level pivot use `forecast.sounding`.",
     inputSchema: {
-      lat: { type: "number", required: true, description: "Latitude" },
-      lon: { type: "number", required: true, description: "Longitude" },
-      model: { type: "string", required: false, description: "Forecast model." },
-      refTime: { type: "string", required: false, description: "Model run timestamp." },
-      step: { type: "number", required: false, description: "Hours per sample." },
+      lat: { type: "number", required: true, description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N). Example: 32.0853." },
+      lon: { type: "number", required: true, description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E). Example: 34.7818." },
+      model: { type: "string", required: false, description: "Forecast model id. Common: `ecmwf` (default, global 9 km), `gfs`, `icon`, `iconEu`, `hrrrConus`, `arome`. Full catalog via `forecast.modelManifest`." },
+      refTime: { type: "string", required: false, description: "ISO-8601 model-run timestamp (e.g. `2026-05-13T12:00:00Z`). Omit for the latest run." },
+      step: { type: "number", required: false, description: "Hours per sample. Default 3; pass `1` for hourly (premium models), `6` for sparser series." },
     },
     async execute(input: Input, ctx: Ctx) {
       const c = getClient(ctx);
@@ -220,16 +220,16 @@ export default function windy(rl: RunlinePluginAPI) {
     description:
       "Hourly air-quality forecast (CAMS global or camsEu Europe). Use when the user asks about pollutant forecasts (NO2/O3/PM2.5/PM10/SO2/CO/AQI). For measured station data use `stations.airQualityDetail`.",
     inputSchema: {
-      lat: { type: "number", required: true, description: "Latitude" },
-      lon: { type: "number", required: true, description: "Longitude" },
+      lat: { type: "number", required: true, description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N). Example: 32.0853." },
+      lon: { type: "number", required: true, description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E). Example: 34.7818." },
       model: {
         type: "string",
         required: false,
-        description: "`cams` (global) or `camsEu` (Europe).",
+        description: "Air-quality model. `cams` (default, 40 km global, CAMS) or `camsEu` (10 km Europe-only, CAMS-EU). Use `camsEu` for finer detail inside Europe.",
         enum: ["cams", "camsEu"],
         default: "cams",
       },
-      refTime: { type: "string", required: false, description: "Model run timestamp." },
+      refTime: { type: "string", required: false, description: "ISO-8601 model-run timestamp (e.g. `2026-05-13T12:00:00Z`). Omit for the latest run." },
     },
     async execute(input: Input, ctx: Ctx) {
       const c = getClient(ctx);
@@ -247,11 +247,11 @@ export default function windy(rl: RunlinePluginAPI) {
     description:
       "Pressure-level sounding (skew-T) — per-timestep × per-level samples with derived wind speed/direction. Use for aviation, glider, paragliding, or any upper-air question.",
     inputSchema: {
-      lat: { type: "number", required: true, description: "Latitude" },
-      lon: { type: "number", required: true, description: "Longitude" },
-      model: { type: "string", required: false, description: "Forecast model." },
-      refTime: { type: "string", required: false, description: "Model run timestamp." },
-      step: { type: "number", required: false, description: "Hours per sample." },
+      lat: { type: "number", required: true, description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N). Example: 32.0853." },
+      lon: { type: "number", required: true, description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E). Example: 34.7818." },
+      model: { type: "string", required: false, description: "Forecast model id. Common: `ecmwf` (default, global 9 km), `gfs`, `icon`, `iconEu`, `hrrrConus`, `arome`. Full catalog via `forecast.modelManifest`." },
+      refTime: { type: "string", required: false, description: "ISO-8601 model-run timestamp (e.g. `2026-05-13T12:00:00Z`). Omit for the latest run." },
+      step: { type: "number", required: false, description: "Hours per sample. Default 3; pass `1` for hourly (premium models), `6` for sparser series." },
     },
     async execute(input: Input, ctx: Ctx) {
       const c = getClient(ctx);
@@ -272,10 +272,10 @@ export default function windy(rl: RunlinePluginAPI) {
       model: {
         type: "string",
         required: false,
-        description: "Model identifier (default `ecmwf-hres`).",
+        description: "Model identifier as it appears in tile URLs. Defaults to `ecmwf-hres`. Other examples: `gfs`, `icon-global`, `hrrr-conus`, `arome-france`. See MODEL_CATALOG in @yosit/windy-skill types for the full list.",
         default: "ecmwf-hres",
       },
-      premium: { type: "boolean", required: false, description: "Include premium reftimes.", default: true },
+      premium: { type: "boolean", required: false, description: "If true, request premium-tier reftimes (faster refresh cadence). Default true. Pass false to see only free-tier runs.", default: true },
     },
     async execute(input: Input, ctx: Ctx) {
       const c = getClient(ctx);
@@ -289,10 +289,10 @@ export default function windy(rl: RunlinePluginAPI) {
     description:
       "Resolve a place name to (lat, lon). Use as the first step when the user names a place (\"Reykjavik\", \"Big Sur\") instead of coords. Results biased toward (`biasLat`, `biasLon`) for disambiguation.",
     inputSchema: {
-      query: { type: "string", required: true, description: "Free-text query" },
-      biasLat: { type: "number", required: true, description: "Bias-point latitude" },
-      biasLon: { type: "number", required: true, description: "Bias-point longitude" },
-      size: { type: "number", required: false, description: "Max results (default 13).", default: 13 },
+      query: { type: "string", required: true, description: "Free-text place name. Examples: `\"Tel Aviv\"`, `\"Eiffel Tower\"`, `\"LLBG\"` (matches airport codes too)." },
+      biasLat: { type: "number", required: true, description: "Bias-point latitude, decimal degrees. Results closer to (biasLat, biasLon) rank higher. Pass `0` if you have no preference." },
+      biasLon: { type: "number", required: true, description: "Bias-point longitude, decimal degrees. Pass `0` if you have no preference." },
+      size: { type: "number", required: false, description: "Max results to return. Default 13, max ~25.", default: 13 },
     },
     async execute(input: Input, ctx: Ctx) {
       const c = getClient(ctx);
@@ -311,9 +311,9 @@ export default function windy(rl: RunlinePluginAPI) {
     description:
       "Reverse-geocode a coord to suburb / city / district / state / country. Use when you have lat/lon and need a human-readable label. `zoom` 14 ≈ neighborhood, 10 ≈ city.",
     inputSchema: {
-      lat: { type: "number", required: true, description: "Latitude" },
-      lon: { type: "number", required: true, description: "Longitude" },
-      zoom: { type: "number", required: false, description: "Detail level (default 14).", default: 14 },
+      lat: { type: "number", required: true, description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N). Example: 32.0853." },
+      lon: { type: "number", required: true, description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E). Example: 34.7818." },
+      zoom: { type: "number", required: false, description: "Detail level (web-map zoom). `10` ≈ city, `14` ≈ neighborhood (default), `18` ≈ street. Lower zoom = broader admin area.", default: 14 },
     },
     async execute(input: Input, ctx: Ctx) {
       const c = getClient(ctx);
@@ -325,8 +325,8 @@ export default function windy(rl: RunlinePluginAPI) {
     description:
       "Elevation in meters at a coord (returns a bare number). Use for altitude / terrain questions or pressure-altitude conversions.",
     inputSchema: {
-      lat: { type: "number", required: true, description: "Latitude" },
-      lon: { type: "number", required: true, description: "Longitude" },
+      lat: { type: "number", required: true, description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N). Example: 32.0853." },
+      lon: { type: "number", required: true, description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E). Example: 34.7818." },
     },
     async execute(input: Input, ctx: Ctx) {
       const c = getClient(ctx);
@@ -338,12 +338,12 @@ export default function windy(rl: RunlinePluginAPI) {
     description:
       "Timezone metadata at a coord and instant (default: now). Use to convert UTC forecast timestamps to local time, or to detect DST transitions.",
     inputSchema: {
-      lat: { type: "number", required: true, description: "Latitude" },
-      lon: { type: "number", required: true, description: "Longitude" },
+      lat: { type: "number", required: true, description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N). Example: 32.0853." },
+      lon: { type: "number", required: true, description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E). Example: 34.7818." },
       ts: {
         type: "number",
         required: false,
-        description: "Unix ms timestamp (default: now).",
+        description: "Unix milliseconds UTC at which to resolve the timezone (needed for DST handling). Default: server `Date.now()`. Example: `1778705511377`.",
       },
     },
     async execute(input: Input, ctx: Ctx) {
@@ -358,8 +358,8 @@ export default function windy(rl: RunlinePluginAPI) {
     description:
       "Nearby ground weather stations (METAR + WMO + PWS + MADIS) with latest obs. Use when the user wants OBSERVED weather (vs forecast). Feed `id` into `stations.observations` for history.",
     inputSchema: {
-      lat: { type: "number", required: true, description: "Latitude" },
-      lon: { type: "number", required: true, description: "Longitude" },
+      lat: { type: "number", required: true, description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N). Example: 32.0853." },
+      lon: { type: "number", required: true, description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E). Example: 34.7818." },
     },
     async execute(input: Input, ctx: Ctx) {
       const c = getClient(ctx);
@@ -371,8 +371,8 @@ export default function windy(rl: RunlinePluginAPI) {
     description:
       "Nearby measured AQ stations with current AQI snapshot. Feed `id` into `stations.airQualityDetail` for the full pollutant breakdown. For forecast AQ use `forecast.airQuality`.",
     inputSchema: {
-      lat: { type: "number", required: true, description: "Latitude" },
-      lon: { type: "number", required: true, description: "Longitude" },
+      lat: { type: "number", required: true, description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N). Example: 32.0853." },
+      lon: { type: "number", required: true, description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E). Example: 34.7818." },
     },
     async execute(input: Input, ctx: Ctx) {
       const c = getClient(ctx);
@@ -384,8 +384,8 @@ export default function windy(rl: RunlinePluginAPI) {
     description:
       "Nearby tide POIs (port list). Use to discover a `poiId` to pass to `tides.byPoi`. If you just want tides at a coord, `tides.point` is enough.",
     inputSchema: {
-      lat: { type: "number", required: true, description: "Latitude" },
-      lon: { type: "number", required: true, description: "Longitude" },
+      lat: { type: "number", required: true, description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N). Example: 32.0853." },
+      lon: { type: "number", required: true, description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E). Example: 34.7818." },
     },
     async execute(input: Input, ctx: Ctx) {
       const c = getClient(ctx);
@@ -397,7 +397,7 @@ export default function windy(rl: RunlinePluginAPI) {
     description:
       "Full latest measurement at one AQ station — every pollutant + its per-pollutant AQI. Use after `stations.nearbyAirQuality` once you've picked an `id`.",
     inputSchema: {
-      id: { type: "string", required: true, description: "Station id (with or without `airq-` prefix)." },
+      id: { type: "string", required: true, description: "Air-quality station id (with or without the `airq-` prefix — the client strips it). Get one from `stations.nearbyAirQuality`. Example: `airq-1029` or `1029`." },
     },
     async execute(input: Input, ctx: Ctx) {
       const c = getClient(ctx);
@@ -412,20 +412,20 @@ export default function windy(rl: RunlinePluginAPI) {
       type: {
         type: "string",
         required: true,
-        description: "Station type.",
+        description: "Station network. `ad` = airport METAR, `wmo` = WMO, `pws` = personal weather stations, `madis` = MADIS, `airq` = air-quality. The `id` returned by `stations.nearby` includes the matching type.",
         enum: ["airq", "ad", "wmo", "pws", "madis"],
       },
-      id: { type: "string", required: true, description: "Station id (with or without type prefix)." },
+      id: { type: "string", required: true, description: "Station id (with or without the type prefix — the client strips `airq-`/`ad-`/`wmo-`/`pws-`/`madis-`). Get one from `stations.nearby` or `stations.nearbyAirQuality`." },
       days: {
         type: "number",
         required: false,
-        description: "Look-back window in days (1, 3, 7, 10, 30).",
+        description: "Look-back window in days. Server accepts {1, 3, 7, 10, 30}. Default 10.",
         default: 10,
       },
       step: {
         type: "number",
         required: false,
-        description: "Hours per sample (1 = hourly, 3 = 3-hourly, 24 = daily).",
+        description: "Hours per sample. `1` = hourly (default), `3` = 3-hourly, `24` = daily summaries.",
         default: 1,
       },
     },
@@ -448,8 +448,8 @@ export default function windy(rl: RunlinePluginAPI) {
     description:
       "Tide-height forecast at the port nearest a coord. Use for sailing / fishing / coastal-access questions. For a specific port use `tides.byPoi`. Returns `{header, data, extremes}` — `data.height` parallels `data.ts`.",
     inputSchema: {
-      lat: { type: "number", required: true, description: "Latitude" },
-      lon: { type: "number", required: true, description: "Longitude" },
+      lat: { type: "number", required: true, description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N). Example: 32.0853." },
+      lon: { type: "number", required: true, description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E). Example: 34.7818." },
     },
     async execute(input: Input, ctx: Ctx) {
       const c = getClient(ctx);
@@ -461,7 +461,7 @@ export default function windy(rl: RunlinePluginAPI) {
     description:
       "Tide-height forecast for a specific tide-POI. Use after `stations.nearbyTides` returns a `poiId` you want to pin to.",
     inputSchema: {
-      poiId: { type: "string", required: true, description: "Tide POI id." },
+      poiId: { type: "string", required: true, description: "Tide-POI id (e.g. `tide-1234`). Get one from `stations.nearbyTides`." },
     },
     async execute(input: Input, ctx: Ctx) {
       const c = getClient(ctx);
@@ -475,9 +475,9 @@ export default function windy(rl: RunlinePluginAPI) {
     description:
       "Government-issued severe-weather alerts (CAP) in effect at a location — flood / storm / fire / heat. Public, no auth. For PERSONAL alerts the user subscribed to see `alerts.live`.",
     inputSchema: {
-      lat: { type: "number", required: true, description: "Latitude" },
-      lon: { type: "number", required: true, description: "Longitude" },
-      maxCount: { type: "number", required: false, description: "Max alerts (default 6).", default: 6 },
+      lat: { type: "number", required: true, description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N). Example: 32.0853." },
+      lon: { type: "number", required: true, description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E). Example: 34.7818." },
+      maxCount: { type: "number", required: false, description: "Maximum alerts to return. Default 6. Use a higher value (e.g. 50) when you suspect multiple concurrent alerts at the location.", default: 6 },
     },
     async execute(input: Input, ctx: Ctx) {
       const c = getClient(ctx);
@@ -491,12 +491,12 @@ export default function windy(rl: RunlinePluginAPI) {
     description:
       "Live alerts the SIGNED-IN user subscribed to (push-style threshold alarms). Requires auth. For public severe-weather at a location use `alerts.cap`.",
     inputSchema: {
-      lat: { type: "number", required: true, description: "Latitude" },
-      lon: { type: "number", required: true, description: "Longitude" },
+      lat: { type: "number", required: true, description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N). Example: 32.0853." },
+      lon: { type: "number", required: true, description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E). Example: 34.7818." },
       distance: {
         type: "string",
         required: false,
-        description: "Distance unit (`km` or `mi`).",
+        description: "Unit for any distance fields the server returns. `km` (default) or `mi`.",
         enum: ["km", "mi"],
         default: "km",
       },
@@ -536,13 +536,13 @@ export default function windy(rl: RunlinePluginAPI) {
     description:
       "Webcams near a coord with current image URLs. Use for visual ground truth (\"what does it actually look like there?\"). For full detail use `webcams.detail`.",
     inputSchema: {
-      lat: { type: "number", required: true, description: "Latitude" },
-      lon: { type: "number", required: true, description: "Longitude" },
-      limit: { type: "number", required: false, description: "Max results." },
+      lat: { type: "number", required: true, description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N). Example: 32.0853." },
+      lon: { type: "number", required: true, description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E). Example: 34.7818." },
+      limit: { type: "number", required: false, description: "Max webcams to return. Default 10–20 (server-controlled). Pass a smaller value for a brief survey." },
       imageSize: {
         type: "string",
         required: false,
-        description: "Image variant.",
+        description: "Image variant URL to populate. `thumbnail` (default, smallest), `preview` (medium), `original` (full-res).",
         enum: ["thumbnail", "preview", "original"],
         default: "thumbnail",
       },
@@ -564,11 +564,11 @@ export default function windy(rl: RunlinePluginAPI) {
     description:
       "Full detail for one webcam by id (location, freshest image URLs). Use after `webcams.near` or `webcams.search` to grab a high-res frame.",
     inputSchema: {
-      id: { type: "string", required: true, description: "Webcam id." },
+      id: { type: "string", required: true, description: "Webcam numeric id (string-form). Get one from `webcams.near` or `webcams.search`." },
       imageSize: {
         type: "string",
         required: false,
-        description: "Image variant.",
+        description: "Image variant URL to populate. `thumbnail`, `preview` (default), `original` (full-res).",
         enum: ["thumbnail", "preview", "original"],
         default: "preview",
       },
@@ -589,9 +589,9 @@ export default function windy(rl: RunlinePluginAPI) {
     description:
       "Webcam text search by name / location. Use when the user names a place (\"Eiffel Tower\", \"Big Sur\") instead of giving coords.",
     inputSchema: {
-      query: { type: "string", required: true, description: "Search text." },
-      lat: { type: "number", required: false, description: "Bias latitude." },
-      lon: { type: "number", required: false, description: "Bias longitude." },
+      query: { type: "string", required: true, description: "Free-text query matching webcam title / city / country. Example: `\"Big Sur\"`, `\"Eiffel\"`." },
+      lat: { type: "number", required: false, description: "Optional bias-point latitude (decimal degrees) — closer webcams rank higher." },
+      lon: { type: "number", required: false, description: "Optional bias-point longitude (decimal degrees)." },
     },
     async execute(input: Input, ctx: Ctx) {
       const c = getClient(ctx);
@@ -607,7 +607,7 @@ export default function windy(rl: RunlinePluginAPI) {
     description:
       "Airport info by ICAO — name, elevation, runways (with headings + surface), latest METAR/TAF, frequencies. Use for aviation context (alternate planning, METAR/TAF lookup, runway alignment with surface wind).",
     inputSchema: {
-      icao: { type: "string", required: true, description: "ICAO code (e.g. KJFK, EGLL, LLBG)." },
+      icao: { type: "string", required: true, description: "ICAO 4-letter airport code, case-insensitive. Examples: `KJFK` (JFK), `EGLL` (Heathrow), `LLBG` (Ben Gurion). Use IATA→ICAO lookups if you only have a 3-letter code." },
     },
     async execute(input: Input, ctx: Ctx) {
       const c = getClient(ctx);
@@ -638,17 +638,17 @@ export default function windy(rl: RunlinePluginAPI) {
   });
 
   rl.registerAction("account.addFavourite", {
-    description: "Create a favourite (server assigns id).",
+    description: "Bookmark a coordinate in the user's windy account. Requires auth. Returns the created favourite (server assigns id + timestamps). To find created entries later use `account.favourites`.",
     inputSchema: {
-      lat: { type: "number", required: true, description: "Latitude" },
-      lon: { type: "number", required: true, description: "Longitude" },
-      title: { type: "string", required: false, description: "Display title." },
-      name: { type: "string", required: false, description: "Internal name." },
-      type: { type: "string", required: false, description: "Favourite type (e.g. `fav`)." },
-      cc: { type: "string", required: false, description: "ISO 3166-1 alpha-2 country code." },
-      note: { type: "string", required: false, description: "User-supplied note." },
-      pin: { type: "boolean", required: false, description: "Pin to top of favourites list." },
-      pinOrder: { type: "number", required: false, description: "Sort order among pinned favourites (lower = higher)." },
+      lat: { type: "number", required: true, description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N). Example: 32.0853." },
+      lon: { type: "number", required: true, description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E). Example: 34.7818." },
+      title: { type: "string", required: false, description: "Human-readable label shown in the windy app sidebar. Example: `\"Home\"`, `\"Cabin\"`." },
+      name: { type: "string", required: false, description: "Internal name used in URL slugs. Lowercase / hyphenated. Example: `\"home\"`." },
+      type: { type: "string", required: false, description: "Favourite kind. Default `fav` (the only value windy currently accepts here)." },
+      cc: { type: "string", required: false, description: "ISO 3166-1 alpha-2 country code, lowercase. Example: `\"il\"`, `\"us\"`." },
+      note: { type: "string", required: false, description: "Free-form user note attached to the favourite. Visible in the app." },
+      pin: { type: "boolean", required: false, description: "If true, pin to the top of the favourites list (sticky in UI). Default false." },
+      pinOrder: { type: "number", required: false, description: "Sort order among pinned favourites — lower value appears higher. Only meaningful when `pin: true`. Example: `0` for first." },
     },
     async execute(input: Input, ctx: Ctx) {
       const c = getClient(ctx);
@@ -668,13 +668,13 @@ export default function windy(rl: RunlinePluginAPI) {
   });
 
   rl.registerAction("account.updateFavourite", {
-    description: "Update an existing favourite by id.",
+    description: "Modify an existing favourite. Requires auth. Pass `patch` as a partial FavouriteValue; only the keys you include are changed. Use after `account.favourites` to grab the `id`.",
     inputSchema: {
-      id: { type: "string", required: true, description: "Favourite id." },
+      id: { type: "string", required: true, description: "Favourite id (server-assigned, returned by `account.addFavourite` or `account.favourites`). Example: `abc123def`." },
       patch: {
         type: "object",
         required: true,
-        description: "Partial favourite value to merge (lat/lon/title/name/type).",
+        description: "Partial FavouriteValue to merge. Any subset of `lat`, `lon`, `title`, `name`, `type`, `cc`, `note`, `pin`, `pinOrder`. Example: `{ title: \"New name\", pin: true }`.",
       },
     },
     async execute(input: Input, ctx: Ctx) {
@@ -685,9 +685,9 @@ export default function windy(rl: RunlinePluginAPI) {
   });
 
   rl.registerAction("account.deleteFavourite", {
-    description: "Delete a favourite by id.",
+    description: "Permanently delete a favourite. Requires auth. Use after `account.favourites` to find the `id`. No-op if id is unknown.",
     inputSchema: {
-      id: { type: "string", required: true, description: "Favourite id." },
+      id: { type: "string", required: true, description: "Favourite id (from `account.favourites`). The deletion is permanent." },
     },
     async execute(input: Input, ctx: Ctx) {
       const c = getClient(ctx);
@@ -696,7 +696,7 @@ export default function windy(rl: RunlinePluginAPI) {
   });
 
   rl.registerAction("account.userAlerts", {
-    description: "List the user's saved alerts.",
+    description: "List threshold-style weather alarms the user has configured (e.g. \"wind > 10 m/s at home\"). Requires auth. Returns `UserAlertItem[]` with `value.conditions` describing each trigger.",
     inputSchema: {},
     async execute(_input: Input, ctx: Ctx) {
       const c = getClient(ctx);
@@ -705,9 +705,9 @@ export default function windy(rl: RunlinePluginAPI) {
   });
 
   rl.registerAction("account.userAlert", {
-    description: "Get a single user alert by id.",
+    description: "Fetch one user alert with its full condition tree. Requires auth. Use after `account.userAlerts` once you have an `id`.",
     inputSchema: {
-      id: { type: "string", required: true, description: "Alert id." },
+      id: { type: "string", required: true, description: "User-alert id (from `account.userAlerts`). Example: `alert-1234`." },
     },
     async execute(input: Input, ctx: Ctx) {
       const c = getClient(ctx);
@@ -716,9 +716,9 @@ export default function windy(rl: RunlinePluginAPI) {
   });
 
   rl.registerAction("account.deleteUserAlert", {
-    description: "Delete a user alert by id.",
+    description: "Permanently delete a user alert. Requires auth. Use after `account.userAlerts` to find the `id`.",
     inputSchema: {
-      id: { type: "string", required: true, description: "Alert id." },
+      id: { type: "string", required: true, description: "User-alert id (from `account.userAlerts`). Example: `alert-1234`." },
     },
     async execute(input: Input, ctx: Ctx) {
       const c = getClient(ctx);

@@ -184,8 +184,8 @@ Exit codes: `0` on success, `1` on any failure (expired cookie, network error, e
 
 ## Output
 
-- `--format toon` (default) — concise human-readable
-- `--format json` — machine-readable JSON
+- `--format json` (default) — machine-readable JSON
+- `--format toon` — compact human-readable [toon](https://github.com/toon-format/toon)
 
 ## Environment
 

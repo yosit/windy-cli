@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.0] - 2026-05-22
+
+### Added
+- **Session lifecycle (Phase 2.0)** — `src/session.ts` gains:
+  - `isSessionReusable(s, marginSec)` — cheap pre-check before paying for a JWT refresh.
+  - `recordLoginAttempt()` — persistent 24h history of `/api/info` bootstraps, capped at 8/24h; protects against runaway re-auth loops from stuck plugins or retry storms. Wired into `WindyClient.refreshAuth()`. Bypass with `WINDY_DISABLE_LOGIN_THROTTLE=1`.
+  - `startKeepalive({ baseMs, jitter, ping })` — jittered (±20%) keepalive scheduler that `unref()`s its timer so it doesn't keep CLI processes alive.
+  - `PersistedSession.lastKeepaliveMs` — written on every successful `refreshAuth()`.
+- **Data extraction strategy (Phase 9)** — `kb/windy-data-strategy.md` filled in: shape-of-data matrix, per-domain sync strategies, DuckDB schema for `forecast_point` / `station_observations` / `storms` / `alerts` / `geo_cache`, sync-state tracking. Frames windy as real-time-snapshot rather than bulk-export.
+- **Monorepo build scripts** — `pnpm build:plugins`, `pnpm build:all`, `pnpm lint:all` build/lint both plugin packages from the repo root.
+
+### Changed
+- Package version `0.1.x` → `0.4.0`. Plugins synchronised to `0.4.0`.
+
 ## [0.1.0] - 2026-05-13
 
 ### Added

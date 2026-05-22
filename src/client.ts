@@ -60,6 +60,7 @@ import { LEVELS, LEVEL_ALTITUDE } from './types';
 import {
   decodeJWT,
   loadSession,
+  recordLoginAttempt,
   saveSession,
   tokenIsStale,
   type PersistedSession,
@@ -156,6 +157,9 @@ export class WindyClient {
           'refreshed — it expires in ~48 h and must be replaced.',
       );
     }
+    // Guard against tight-loop re-auth (stuck plugin, retry storm). Persistent
+    // 24h history; throws if the budget is exhausted.
+    recordLoginAttempt();
     // Bypass ensureAuth() to avoid recursion — the /api/info call IS the refresh.
     const info = await this.requestNoEnsure<AccountInfo>('/api/info', {
       host: ACCOUNT_HOST,
@@ -182,6 +186,7 @@ export class WindyClient {
     if (info?.subscription) {
       this.session.subscription = info.subscription;
     }
+    this.session.lastKeepaliveMs = Date.now();
     if (isAuthedResponse) this.persist();
     return info;
   }

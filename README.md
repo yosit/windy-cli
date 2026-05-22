@@ -62,7 +62,7 @@ windy stations near 48.85,2.35
 WINDY_TOKEN='eyJ...' windy whoami
 ```
 
-Output is [toon](https://github.com/toon-format/toon) by default; pass `--format json` for JSON.
+Output is JSON by default; pass `--format toon` for compact [toon](https://github.com/toon-format/toon) output.
 
 ### Common command groups
 
@@ -163,7 +163,7 @@ src/
   client.ts       WindyClient — one method per endpoint
   session.ts      ~/.config/windy-cli/session.json persistence + JWT decode
   types.ts        Response shapes + model/overlay/level catalogs
-  formatters.ts   toon (default) + json output
+  formatters.ts   json (default) + toon output
   index.ts        Public library exports
 bin/
   windy-skill.js  shebang wrapper for the CLI
