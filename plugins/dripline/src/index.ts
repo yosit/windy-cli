@@ -389,10 +389,13 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       if (lat == null || lon == null) return;
       try {
         const c = getClient(ctx);
-        const r = (await c.pointNow(lat, lon, {
+        // `c.pointNow` returns a bare NowSnapshot+extras (no header). Use
+        // `pointForecast` so we can populate both header (model / ref_time /
+        // tz / elevation / sun) and the `now` snapshot in one call.
+        const r = await c.pointForecast(lat, lon, {
           model: qStr(ctx.quals, "model"),
           refTime: qStr(ctx.quals, "ref_time"),
-        })) as PointForecast;
+        });
         const h = r.header;
         yield {
           lat, lon,

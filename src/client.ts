@@ -358,7 +358,7 @@ export class WindyClient {
    * Location search biased to a coordinate.
    * @param query Free-text query
    * @param biasLat,biasLon Bias point (results closer ranked higher)
-   * @param size Max results (default 13)
+   * @param size Max results (default 13). API minimum is 10 — smaller values are clamped up.
    */
   async search(
     query: string,
@@ -368,7 +368,7 @@ export class WindyClient {
   ): Promise<SearchResponse> {
     return this.request<SearchResponse>(
       `/search/v4.1/${fmt(biasLat)}/${fmt(biasLon)}/${encodeURIComponent(query)}`,
-      { qs: { lang: this.lang, size } },
+      { qs: { lang: this.lang, size: Math.max(10, size) } },
     );
   }
 
@@ -385,10 +385,13 @@ export class WindyClient {
     return this.request<number>(`/services/elevation/${fmt(lat)}/${fmt(lon)}`);
   }
 
-  /** Timezone info for a coordinate at an instant. */
+  /**
+   * Timezone info for a coordinate at an instant.
+   * @param ts Unix milliseconds UTC (default: now). Converted to ISO-8601 on the wire — the API rejects numeric epochs.
+   */
   async timezone(lat: number, lon: number, ts: number = Date.now()): Promise<unknown> {
     return this.request(`/services/v1/timezone/${fmt(lat)}/${fmt(lon)}`, {
-      qs: { ts },
+      qs: { ts: new Date(ts).toISOString() },
     });
   }
 

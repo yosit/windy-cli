@@ -292,7 +292,7 @@ export default function windy(rl: RunlinePluginAPI) {
       query: { type: "string", required: true, description: "Free-text place name. Examples: `\"Tel Aviv\"`, `\"Eiffel Tower\"`, `\"LLBG\"` (matches airport codes too)." },
       biasLat: { type: "number", required: true, description: "Bias-point latitude, decimal degrees. Results closer to (biasLat, biasLon) rank higher. Pass `0` if you have no preference." },
       biasLon: { type: "number", required: true, description: "Bias-point longitude, decimal degrees. Pass `0` if you have no preference." },
-      size: { type: "number", required: false, description: "Max results to return. Default 13, max ~25.", default: 13 },
+      size: { type: "number", required: false, description: "Max results to return. Default 13. API range: min 10, max ~25 — values < 10 are clamped up.", default: 13 },
     },
     async execute(input: Input, ctx: Ctx) {
       const c = getClient(ctx);
