@@ -210,6 +210,78 @@ describe('dripline forecast tables surface errors (#4, #8)', () => {
   });
 });
 
+describe('dripline forecast tables normalize model casing (#9)', () => {
+  const restores: Array<() => void> = [];
+  afterEach(() => {
+    while (restores.length) restores.pop()!();
+  });
+
+  it('windy_forecast_point yields lowercase `model` even when header is uppercase', async () => {
+    const s = stubMethod('pointForecast', async () => ({
+      header: { model: 'ECMWF', refTime: '2026-05-22T12:00:00Z' },
+      data: { ts: [1_700_000_000_000], temp: [290] },
+    }) as never);
+    restores.push(s.restore);
+
+    const { tables } = mountDripline();
+    const t = tables.get('windy_forecast_point')!;
+    const rows = await drain(t.list!({
+      connection: { config: { uid: 'drip-case' } },
+      quals: [
+        { column: 'lat', operator: '=', value: 37.7442 },
+        { column: 'lon', operator: '=', value: 23.4283 },
+        { column: 'model', operator: '=', value: 'ecmwf' },
+      ],
+    }));
+    expect(rows.length).toBe(1);
+    expect(rows[0].model).toBe('ecmwf');
+  });
+
+  it('windy_forecast_point lowercases the model qual before calling the client', async () => {
+    let receivedOpts: Record<string, unknown> | undefined;
+    const s = stubMethod('pointForecast', async function (this: WindyClient, ..._args: unknown[]) {
+      receivedOpts = _args[2] as Record<string, unknown>;
+      return { header: { model: 'ECMWF', refTime: 't' }, data: { ts: [] } } as never;
+    });
+    restores.push(s.restore);
+
+    const { tables } = mountDripline();
+    const t = tables.get('windy_forecast_point')!;
+    await drain(t.list!({
+      connection: { config: { uid: 'drip-case-in' } },
+      quals: [
+        { column: 'lat', operator: '=', value: 1 },
+        { column: 'lon', operator: '=', value: 2 },
+        { column: 'model', operator: '=', value: 'ECMWF' },
+      ],
+    }));
+    expect(receivedOpts?.model).toBe('ecmwf');
+  });
+
+  it('windy_forecast_air_quality accepts lowercase `camseu` alias', async () => {
+    let receivedOpts: Record<string, unknown> | undefined;
+    const s = stubMethod('airQualityForecast', async function (this: WindyClient, ..._args: unknown[]) {
+      receivedOpts = _args[2] as Record<string, unknown>;
+      return { header: { model: 'camsEu', refTime: 't' }, data: { ts: [] } } as never;
+    });
+    restores.push(s.restore);
+
+    const { tables } = mountDripline();
+    const t = tables.get('windy_forecast_air_quality')!;
+    const rows = await drain(t.list!({
+      connection: { config: { uid: 'drip-aq' } },
+      quals: [
+        { column: 'lat', operator: '=', value: 1 },
+        { column: 'lon', operator: '=', value: 2 },
+        { column: 'model', operator: '=', value: 'camseu' },
+      ],
+    }));
+    expect(receivedOpts?.model).toBe('camsEu');
+    // emitted rows are still lowercased for predicate matching
+    for (const r of rows) expect(r.model).toBe('camseu');
+  });
+});
+
 describe('runline plugin tolerates nearbyTides 404 via client (#6)', () => {
   const restores: Array<() => void> = [];
   afterEach(() => {

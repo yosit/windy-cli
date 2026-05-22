@@ -342,7 +342,7 @@ interface PointForecast {
 }
 
 interface ForecastHeader {
-  model: string;          // "ECMWF"
+  model: string;          // "ECMWF" — uppercase on the wire. The dripline plugin lowercases this on emit (and lowercases incoming model quals) so SQL predicates like `WHERE model = 'ecmwf'` match without `lower()`. See #9.
   refTime: string;        // ISO "YYYY-MM-DDTHH:00:00Z"
   update: string;         // ISO model run time
   updateTs: number;       // unix ms

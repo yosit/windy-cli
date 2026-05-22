@@ -87,6 +87,16 @@ function qStr(q: Qual[], c: string): string | undefined { return str(qVal(q, c))
 function qNum(q: Qual[], c: string): number | undefined { return num(qVal(q, c)); }
 function qBool(q: Qual[], c: string): boolean | undefined { return bool(qVal(q, c)); }
 
+// Lowercase model identifiers on the wire. The forecast `header.model` field
+// is uppercase in some responses (e.g. `ECMWF`) while users naturally write
+// `WHERE model = 'ecmwf'`. DuckDB applies post-filters after we yield rows,
+// so an emitted `ECMWF` would be filtered out. Normalize on both ingress and
+// egress so case-insensitive predicates Just Work. See #9.
+function lc(s: string | undefined): string | undefined {
+  return typeof s === "string" ? s.toLowerCase() : s;
+}
+function qModel(q: Qual[], c = "model"): string | undefined { return lc(qStr(q, c)); }
+
 // ── Client construction ───────────────────────────────────────────────────
 
 // Module-level client cache. Without this, each table query constructs a
@@ -271,12 +281,12 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       try {
         const c = getClient(ctx);
         const r: PointForecast = await c.pointForecast(lat, lon, {
-          model: qStr(ctx.quals, "model"),
+          model: qModel(ctx.quals),
           refTime: qStr(ctx.quals, "ref_time"),
           step: qNum(ctx.quals, "step"),
         });
         const h = r.header;
-        const model = h.model;
+        const model = lc(h.model);
         const refTime = h.refTime;
         const d = r.data;
         const tsArr = d.ts ?? [];
@@ -358,11 +368,11 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       try {
         const c = getClient(ctx);
         const r: PointForecast = await c.pointForecast(lat, lon, {
-          model: qStr(ctx.quals, "model"),
+          model: qModel(ctx.quals),
           refTime: qStr(ctx.quals, "ref_time"),
           setup: "summary",
         });
-        const model = r.header.model;
+        const model = lc(r.header.model);
         const refTime = r.header.refTime;
         for (const [date, s] of Object.entries(r.summary ?? {})) {
           yield {
@@ -423,14 +433,14 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
         // `pointForecast` so we can populate both header (model / ref_time /
         // tz / elevation / sun) and the `now` snapshot in one call.
         const r = await c.pointForecast(lat, lon, {
-          model: qStr(ctx.quals, "model"),
+          model: qModel(ctx.quals),
           refTime: qStr(ctx.quals, "ref_time"),
           includeNow: true,
         });
         const h = r.header;
         yield {
           lat, lon,
-          model: h?.model,
+          model: lc(h?.model),
           ref_time: h?.refTime,
           temp_k: r.now?.temp,
           wind_ms: r.now?.wind,
@@ -492,12 +502,12 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       try {
         const c = getClient(ctx);
         const s: Sounding = await c.sounding(lat, lon, {
-          model: qStr(ctx.quals, "model"),
+          model: qModel(ctx.quals),
           refTime: qStr(ctx.quals, "ref_time"),
           step: qNum(ctx.quals, "step"),
         });
         const h = s.header;
-        const model = h.model;
+        const model = lc(h.model);
         const refTime = h.refTime;
         const headerRaw = jsonOrUndef(h);
         for (const t of s.timesteps) {
@@ -589,7 +599,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       try {
         const c = getClient(ctx);
         const raw = (await c.meteogram(lat, lon, {
-          model: qStr(ctx.quals, "model"),
+          model: qModel(ctx.quals),
           refTime: qStr(ctx.quals, "ref_time"),
           step: qNum(ctx.quals, "step"),
         })) as {
@@ -597,7 +607,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
           data: Record<string, number[] | undefined> & { hours: number[] };
         };
         const h = raw.header;
-        const model = h.model;
+        const model = lc(h.model);
         const refTime = h.refTime;
         const headerRaw = jsonOrUndef(h);
         const tsArr = raw.data.hours ?? [];
@@ -687,17 +697,17 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       const lat = qNum(ctx.quals, "lat");
       const lon = qNum(ctx.quals, "lon");
       if (lat == null || lon == null) return;
-      const m = qStr(ctx.quals, "model");
+      const m = qModel(ctx.quals);
       try {
         const c = getClient(ctx);
         const raw = (await c.airQualityForecast(lat, lon, {
-          model: m === "camsEu" ? "camsEu" : "cams",
+          model: m === "camseu" ? "camsEu" : "cams",
           refTime: qStr(ctx.quals, "ref_time"),
         })) as {
           header: { model: string; refTime: string };
           data: { ts: number[] } & Record<string, number[] | undefined>;
         };
-        const model = raw.header.model;
+        const model = lc(raw.header.model);
         const refTime = raw.header.refTime;
         const d = raw.data;
         const tsArr = d.ts ?? [];
@@ -740,7 +750,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
     async *list(ctx) {
       try {
         const c = getClient(ctx);
-        const model = qStr(ctx.quals, "model") ?? "ecmwf-hres";
+        const model = qModel(ctx.quals) ?? "ecmwf-hres";
         const premium = qBool(ctx.quals, "premium") ?? true;
         const m = await c.modelManifest(model, premium);
         yield { model, premium, manifest: jsonOrUndef(m) };
