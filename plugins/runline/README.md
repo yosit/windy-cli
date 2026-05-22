@@ -3,24 +3,24 @@
 A [runline](https://github.com/Michaelliv/runline) plugin that exposes the
 [windy.com](https://www.windy.com) API as callable actions for agent code.
 
-Built on top of [`@yosit/windy-skill`](../) — the plugin instantiates a
+Built on top of [`@yosit/windy-skill`](../../) — the plugin instantiates a
 `WindyClient` per call using config from `ctx.connection.config`, so it stays
 in lock-step with the CLI's auth handling and endpoint coverage.
 
 ## Install
 
 Use runline's plugin installer pointed at this repo. The plugin lives in
-the `runline-plugin/` subdirectory:
+the `plugins/runline/` subdirectory:
 
 ```bash
-runline plugin install github:yosit/windy-cli#main:runline-plugin
+runline plugin install github:yosit/windy-cli#main:plugins/runline
 ```
 
 Equivalent forms if your runline version prefers an explicit URL:
 
 ```bash
-runline plugin install https://github.com/yosit/windy-cli.git#main:runline-plugin
-runline plugin install git+https://github.com/yosit/windy-cli.git#path=runline-plugin
+runline plugin install https://github.com/yosit/windy-cli.git#main:plugins/runline
+runline plugin install git+https://github.com/yosit/windy-cli.git#path=plugins/runline
 ```
 
 After install, add a connection (all fields optional — public endpoints
@@ -54,6 +54,7 @@ path.
 | `uid` | `WINDY_UID` | no | Stable device UUID. Auto-generated per call if omitted. |
 | `lang` | `WINDY_LANG` | no | ISO 639-1, default `en`. |
 | `country` | `WINDY_COUNTRY` | no | ISO 3166-1 alpha-2 lowercase, default `xx`. |
+| `proxy` | `WINDY_PROXY` | no | HTTPS proxy URL (e.g. `http://localhost:8080`) for debugging. |
 
 All credentials are optional — most public endpoints (forecasts, search,
 geo, stations, alerts, storms, webcams, tides) work anonymously. The

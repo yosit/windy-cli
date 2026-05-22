@@ -710,3 +710,35 @@ Response: `{ts: number[], "wind_u-surface": number[], "temp-850h": number[], ...
 ## Real-time (WebSocket / SSE)
 
 `W.http.createEventSource` exists, but no WebSocket / EventSource connections were observed during home page + detail panel browsing. Likely used for radar archive playback / live lightning.
+
+## Methodology — digest-system v0.4 applied (2026-05-22)
+
+The repo follows the digest-system skill methodology. Phases applied:
+
+- **Phase 7c (field-completeness)** — every API field round-trips through either a runline action return or a dripline table column. Time-series tables expose a `header_raw` JSON column so the full server header survives; new surface-only scalar columns (`elevation_m`, `tz_name`, `utc_offset_h`, `sunrise_ms`, `sunset_ms`, `days_avail`, `step_h`, `has_waves`, `hClouds`) were added; runline `geo.elevation` returns the bare number (no `{elevationM:...}` wrap); runline `account.addFavourite` accepts every `FavouriteValue` field (`cc`, `note`, `pin`, `pinOrder`).
+- **Phase 7d (progressive disclosure)** — top-of-file docstrings on both plugins (what + when + auth + top tables); every action/table description rewritten to name a user intent and cross-link related actions/tables.
+- **Cross-cutting (v0.2.0 session lifecycle)** — `WINDY_PROXY` env support via lazy `https-proxy-agent` on every `https.request` (opt-in by exact name; deliberately does NOT honor ambient `HTTPS_PROXY`); public env-var surface capped at `WINDY_ACCOUNT_SID` + `WINDY_TOKEN` + `WINDY_PROXY`; `WINDY_UID` / `WINDY_LANG` / `WINDY_COUNTRY` / `WINDY_HTTP_TIMEOUT` are internal escape hatches (read by code, not advertised).
+
+### Plugin layout
+
+Plugins live under `plugins/` (per the v0.3.0 scaffold convention):
+
+- `plugins/runline/` → `@yosit/runline-plugin-windy` — typed actions.
+- `plugins/dripline/` → `@yosit/dripline-plugin-windy` — SQL tables (31 of them).
+
+Both type-map `@yosit/windy-skill` to the parent's built `../../dist/index.d.ts`. Build the parent first (`pnpm build` at the repo root), then each plugin (`cd plugins/<name> && pnpm build`).
+
+### Forecast tables — division of labor
+
+Three forecast tables target different ergonomics over the same underlying endpoints; pick by which fields you need:
+
+| table | endpoint | row grain | params |
+|-------|----------|-----------|--------|
+| `windy_forecast_point` | `/forecast/point` | per timestep, surface only | temp, dewpoint, wind (u/v/mag/dir), gust, rh, pressure, precip, snow, clouds {low,mid,high,h}, cape, ptype |
+| `windy_forecast_sounding` | `/forecast/meteogram` (pivoted) | per (timestep, level) — 17 levels | temp, dewpoint, rh, gh, wind u/v/mag/dir |
+| `windy_forecast_meteogram` | `/forecast/meteogram` (raw) | per (timestep, level) — 17 levels | sounding params + surface-only extras (cape, ptype, gust, pressure, precip, snow, clouds) at `level='surface'` |
+
+### Skipped phases
+
+- **Phase 2b** (Vendor auth SDK replay) — N/A. Windy uses OAuth + a single bootstrap call (`account.windy.com/api/info`), not Transmit XM / ForgeRock / Ping / F5.
+- **Phase 6 WAF diagnostics** — N/A so far. No CloudFront/Akamai/F5 rejections observed in practice.

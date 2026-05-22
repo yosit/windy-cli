@@ -4,16 +4,16 @@ A [dripline](https://github.com/Michaelliv/dripline) plugin that exposes the
 [windy.com](https://www.windy.com) API as SQL-queryable tables backed by
 DuckDB.
 
-Built on top of [`@yosit/windy-skill`](../) — every table instantiates a
+Built on top of [`@yosit/windy-skill`](../../) — every table instantiates a
 `WindyClient` per call using config from `ctx.connection.config`, so it
 stays in lock-step with the CLI's auth handling and endpoint coverage.
 
 ## Install
 
 ```bash
-dripline plugin install git:github.com/yosit/windy-cli#packages/dripline-plugin
+dripline plugin install git:github.com/yosit/windy-cli#packages/plugins/dripline
 # or, since this plugin lives in a subdirectory:
-dripline plugin install git+https://github.com/yosit/windy-cli.git#path=dripline-plugin
+dripline plugin install git+https://github.com/yosit/windy-cli.git#path=plugins/dripline
 ```
 
 Then add a connection (all fields optional — public endpoints work
@@ -38,7 +38,7 @@ provides minimal types so this package type-checks before dripline is on
 the resolution path; the real types take over once it is.
 
 The TypeScript path mapping for `@yosit/windy-skill` points at
-`../dist/index.d.ts`, so build the parent (`pnpm build` at the repo
+`../../dist/index.d.ts`, so build the parent (`pnpm build` at the repo
 root) before building the plugin.
 
 ## Connection schema
@@ -50,6 +50,7 @@ root) before building the plugin.
 | `uid`        | `WINDY_UID`          | no       | Stable device UUID. Auto-generated per call if omitted. |
 | `lang`       | `WINDY_LANG`         | no       | ISO 639-1, default `en`. |
 | `country`    | `WINDY_COUNTRY`      | no       | ISO 3166-1 alpha-2 lowercase, default `xx`. |
+| `proxy`      | `WINDY_PROXY`        | no       | HTTPS proxy URL (e.g. `http://localhost:8080`) for debugging via mitmproxy / Charles / Burp. |
 
 All credentials are optional — most public endpoints (forecasts, search,
 geo, stations, alerts, storms, webcams, tides) work anonymously. The
@@ -62,9 +63,11 @@ geo, stations, alerts, storms, webcams, tides) work anonymously. The
 
 | table | required key columns | description |
 |-------|----------------------|-------------|
-| `windy_forecast_point`        | `lat`, `lon` | Multi-day forecast as long-format hourly rows. |
+| `windy_forecast_point`        | `lat`, `lon` | Multi-day forecast as long-format hourly rows (surface only). |
+| `windy_forecast_summary`      | `lat`, `lon` | Daily aggregates (max/min temp, dominant wind, weather icon). One row per date. |
 | `windy_forecast_now`          | `lat`, `lon` | Current-conditions snapshot (1 row). |
-| `windy_forecast_sounding`     | `lat`, `lon` | Pressure-level (skew-T) — one row per (timestep, level). Pivoted from the meteogram endpoint. |
+| `windy_forecast_sounding`     | `lat`, `lon` | Pressure-level (skew-T) — one row per (timestep, level). 6 standard upper-air params. |
+| `windy_forecast_meteogram`    | `lat`, `lon` | Full meteogram fidelity — surface + 17 pressure levels with every parameter the endpoint exposes (one row per (timestep, level), including surface-only cape/ptype/gust/precip/snow/pressure/clouds). |
 | `windy_forecast_air_quality`  | `lat`, `lon` | CAMS / CAMS-Europe AQ forecast (hourly long-format). |
 | `windy_forecast_models`       | —            | Model manifest (reftimes + premium gating) as raw JSON. |
 
@@ -185,9 +188,11 @@ WHERE g.lat = 46.5475 AND g.lon = 7.9852;
 
 - Failed API calls log a warning via `dl.log.warn(...)` and yield zero
   rows, so a partial query (e.g. one bad coordinate) won't crash a join.
-- `windy_forecast_sounding` is built from the meteogram endpoint via the
-  same pivot the CLI uses — there is no separate `windy_forecast_meteogram`
-  table, since it would be redundant with `windy_forecast_point`
-  (surface) + sounding (levels).
+- Three forecast tables target different ergonomics over the same data:
+  `windy_forecast_point` (surface time-series only), `windy_forecast_sounding`
+  (pressure levels, 6 standard params), and `windy_forecast_meteogram` (full
+  surface + pressure-level fidelity in one long-format table — pick this
+  when you need cape / ptype / gust at surface AND upper-air winds in the
+  same query).
 - For mutating operations (create/update/delete favourites or alerts),
   use the CLI directly — dripline plugins expose read-only tables.

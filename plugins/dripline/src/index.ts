@@ -32,6 +32,9 @@ import { randomUUID } from "crypto";
 import {
   WindyClient,
   WindyAPIError,
+  LEVELS,
+  LEVEL_ALTITUDE,
+  type Level,
   type ClientOptions,
   type PersistedSession,
   type PointForecast,
@@ -489,6 +492,132 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
         }
       } catch (e) {
         logErr(dl, "windy_forecast_sounding", e);
+      }
+    },
+  });
+
+  // ── windy_forecast_meteogram ───────────────────────────────────────────
+  // Full meteogram fidelity — surface + 17 pressure levels with every
+  // parameter the meteogram endpoint exposes (vs sounding which keeps the
+  // standard 6 per-level params, vs forecast_point which is surface-only).
+  // One row per (timestep, level).
+  dl.registerTable("windy_forecast_meteogram", {
+    description:
+      "Raw multi-level meteogram — one row per (timestep, level). Use when you need all parameters the meteogram endpoint exposes: per-level temp/dewpoint/RH/geopot height/wind PLUS surface-only fields (cape, ptype, gust, precip, snow, pressure, clouds). For just the 6 standard upper-air params use `windy_forecast_sounding`; for surface time-series use `windy_forecast_point`.",
+    columns: [
+      { name: "lat", type: "number" },
+      { name: "lon", type: "number" },
+      { name: "model", type: "string" },
+      { name: "ref_time", type: "string" },
+      { name: "ts_ms", type: "number" },
+      { name: "ts", type: "datetime" },
+      { name: "hours_offset", type: "number" },
+      { name: "level", type: "string" },
+      { name: "alt_m", type: "number" },
+      { name: "alt_ft", type: "number" },
+      { name: "temp_k", type: "number" },
+      { name: "dewpoint_k", type: "number" },
+      { name: "rh_pct", type: "number" },
+      { name: "gh_m", type: "number" },
+      { name: "wind_u_ms", type: "number" },
+      { name: "wind_v_ms", type: "number" },
+      { name: "wind_ms", type: "number" },
+      { name: "wind_dir_deg", type: "number" },
+      // surface-only — null at pressure levels
+      { name: "gust_ms", type: "number" },
+      { name: "pressure_hpa", type: "number" },
+      { name: "precip_mm", type: "number" },
+      { name: "snow_mm", type: "number" },
+      { name: "clouds_low", type: "number" },
+      { name: "clouds_mid", type: "number" },
+      { name: "clouds_high", type: "number" },
+      { name: "h_clouds", type: "number" },
+      { name: "cape", type: "number" },
+      { name: "ptype", type: "number" },
+      // metadata
+      { name: "tz_name", type: "string" },
+      { name: "step_h", type: "number" },
+      { name: "header_raw", type: "json" },
+    ],
+    keyColumns: [
+      { name: "lat", required: "required" },
+      { name: "lon", required: "required" },
+      { name: "model", required: "optional" },
+      { name: "ref_time", required: "optional" },
+      { name: "step", required: "optional" },
+      { name: "level", required: "optional" },
+    ],
+    async *list(ctx) {
+      const lat = qNum(ctx.quals, "lat");
+      const lon = qNum(ctx.quals, "lon");
+      if (lat == null || lon == null) return;
+      const levelFilter = qStr(ctx.quals, "level");
+      try {
+        const c = getClient(ctx);
+        const raw = (await c.meteogram(lat, lon, {
+          model: qStr(ctx.quals, "model"),
+          refTime: qStr(ctx.quals, "ref_time"),
+          step: qNum(ctx.quals, "step"),
+        })) as {
+          header: { model: string; refTime: string; step?: number; tzName?: string };
+          data: Record<string, number[] | undefined> & { hours: number[] };
+        };
+        const h = raw.header;
+        const model = h.model;
+        const refTime = h.refTime;
+        const headerRaw = jsonOrUndef(h);
+        const tsArr = raw.data.hours ?? [];
+        const refMs = Date.parse(refTime);
+        const levels: readonly Level[] = levelFilter
+          ? ((LEVELS as readonly Level[]).filter((l) => l === levelFilter))
+          : (LEVELS as readonly Level[]);
+        for (let i = 0; i < tsArr.length; i++) {
+          const ts = tsArr[i];
+          const hoursOffset = Number.isFinite(refMs)
+            ? Math.round((ts - refMs) / 3_600_000)
+            : undefined;
+          for (const level of levels) {
+            const u = raw.data[`wind_u-${level}`]?.[i];
+            const v = raw.data[`wind_v-${level}`]?.[i];
+            const explicitWind = raw.data[`wind-${level}`]?.[i];
+            const row: Record<string, unknown> = {
+              lat, lon, model, ref_time: refTime,
+              ts_ms: ts,
+              ts: isoFromMs(ts),
+              hours_offset: hoursOffset,
+              level,
+              alt_m: LEVEL_ALTITUDE[level]?.altM,
+              alt_ft: LEVEL_ALTITUDE[level]?.altFt,
+              temp_k: raw.data[`temp-${level}`]?.[i],
+              dewpoint_k: raw.data[`dewpoint-${level}`]?.[i],
+              rh_pct: raw.data[`rh-${level}`]?.[i],
+              gh_m: raw.data[`gh-${level}`]?.[i],
+              wind_u_ms: u,
+              wind_v_ms: v,
+              wind_ms:
+                u != null && v != null ? Math.hypot(u, v) : explicitWind,
+              wind_dir_deg: windDirFromUV(u, v),
+              tz_name: h.tzName,
+              step_h: h.step,
+              header_raw: headerRaw,
+            };
+            if (level === "surface") {
+              row.gust_ms = raw.data["gust-surface"]?.[i];
+              row.pressure_hpa = raw.data["pressure-surface"]?.[i];
+              row.precip_mm = raw.data["mm-surface"]?.[i];
+              row.snow_mm = raw.data["snow-surface"]?.[i];
+              row.clouds_low = raw.data["clouds_low-surface"]?.[i];
+              row.clouds_mid = raw.data["clouds_mid-surface"]?.[i];
+              row.clouds_high = raw.data["clouds_high-surface"]?.[i];
+              row.h_clouds = raw.data["hClouds-surface"]?.[i];
+              row.cape = raw.data["cape-surface"]?.[i];
+              row.ptype = raw.data["ptype-surface"]?.[i];
+            }
+            yield row;
+          }
+        }
+      } catch (e) {
+        logErr(dl, "windy_forecast_meteogram", e);
       }
     },
   });

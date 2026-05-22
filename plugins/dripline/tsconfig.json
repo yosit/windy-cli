@@ -1,7 +1,8 @@
 {
   "compilerOptions": {
     "target": "ES2020",
-    "module": "commonjs",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
     "lib": ["ES2020"],
     "outDir": "dist",
     "strict": true,
@@ -13,8 +14,8 @@
     "declarationMap": true,
     "sourceMap": true,
     "paths": {
-      "@yosit/windy-skill": ["../dist/index.d.ts"],
-      "runline": ["./src/runline-shim.d.ts"]
+      "@yosit/windy-skill": ["../../dist/index.d.ts"],
+      "dripline": ["./src/dripline-shim.d.ts"]
     },
     "baseUrl": "."
   },
