@@ -97,6 +97,25 @@ function lc(s: string | undefined): string | undefined {
 }
 function qModel(q: Qual[], c = "model"): string | undefined { return lc(qStr(q, c)); }
 
+// Meteogram-endpoint model normalization (#10). The meteogram endpoint
+// (`/forecast/meteogram/<model>/v1.2/...`) accepts user-facing ids like
+// `ecmwf` but returns `header.model = "ECMWF-HRES"` — the lower-level run id.
+// Without normalization, `windy_forecast_sounding` / `_meteogram` emitted
+// `ecmwf-hres`, while passing `model = 'ecmwf-hres'` upstream got HTTP 400 —
+// so there was no working predicate value. Map the wire run-id back to the
+// user-facing id on egress, and accept the wire id as an alias on ingress.
+const METEOGRAM_WIRE_TO_USER: Record<string, string> = {
+  "ecmwf-hres": "ecmwf",
+};
+function meteogramEmittedModel(s: string | undefined): string | undefined {
+  const v = lc(s);
+  return v != null ? (METEOGRAM_WIRE_TO_USER[v] ?? v) : v;
+}
+function qMeteogramModel(q: Qual[]): string | undefined {
+  const v = qModel(q);
+  return v != null ? (METEOGRAM_WIRE_TO_USER[v] ?? v) : v;
+}
+
 // ── Client construction ───────────────────────────────────────────────────
 
 // Module-level client cache. Without this, each table query constructs a
@@ -502,12 +521,12 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       try {
         const c = getClient(ctx);
         const s: Sounding = await c.sounding(lat, lon, {
-          model: qModel(ctx.quals),
+          model: qMeteogramModel(ctx.quals),
           refTime: qStr(ctx.quals, "ref_time"),
           step: qNum(ctx.quals, "step"),
         });
         const h = s.header;
-        const model = lc(h.model);
+        const model = meteogramEmittedModel(h.model);
         const refTime = h.refTime;
         const headerRaw = jsonOrUndef(h);
         for (const t of s.timesteps) {
@@ -599,7 +618,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       try {
         const c = getClient(ctx);
         const raw = (await c.meteogram(lat, lon, {
-          model: qModel(ctx.quals),
+          model: qMeteogramModel(ctx.quals),
           refTime: qStr(ctx.quals, "ref_time"),
           step: qNum(ctx.quals, "step"),
         })) as {
@@ -607,7 +626,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
           data: Record<string, number[] | undefined> & { hours: number[] };
         };
         const h = raw.header;
-        const model = lc(h.model);
+        const model = meteogramEmittedModel(h.model);
         const refTime = h.refTime;
         const headerRaw = jsonOrUndef(h);
         const tsArr = raw.data.hours ?? [];

@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.0.3] - 2026-05-23
+
+### Fixed
+- **`windy_forecast_sounding` / `windy_forecast_meteogram` model alias** (#10). The meteogram endpoint accepts `ecmwf` but returns `header.model = "ECMWF-HRES"`. The dripline tables now map that wire run-id back to the user-facing `ecmwf` on emission, and accept `ecmwf-hres` as an inbound alias — so `WHERE model = 'ecmwf'` matches and `WHERE model = 'ecmwf-hres'` no longer produces HTTP 400.
+
 ## [1.0.0] - 2026-05-23
 
 ### Breaking

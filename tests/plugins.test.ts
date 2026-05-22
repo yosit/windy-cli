@@ -280,6 +280,81 @@ describe('dripline forecast tables normalize model casing (#9)', () => {
     // emitted rows are still lowercased for predicate matching
     for (const r of rows) expect(r.model).toBe('camseu');
   });
+
+  it('windy_forecast_sounding maps ECMWF-HRES header back to user-facing `ecmwf` (#10)', async () => {
+    const s = stubMethod('sounding', async () => ({
+      header: {
+        model: 'ECMWF-HRES',
+        refTime: '2026-05-22T12:00:00Z',
+        lat: 1,
+        lon: 2,
+        step: 3,
+      },
+      timesteps: [{ ts: 1_700_000_000_000, hoursOffset: 0, levels: [{ level: 'surface', altM: 0, altFt: 0 }] }],
+    }) as never);
+    restores.push(s.restore);
+
+    const { tables } = mountDripline();
+    const t = tables.get('windy_forecast_sounding')!;
+    const rows = await drain(t.list!({
+      connection: { config: { uid: 'drip-sound-emit' } },
+      quals: [
+        { column: 'lat', operator: '=', value: 37.7442 },
+        { column: 'lon', operator: '=', value: 23.4283 },
+        { column: 'model', operator: '=', value: 'ecmwf' },
+      ],
+    }));
+    expect(rows.length).toBe(1);
+    expect(rows[0].model).toBe('ecmwf');
+  });
+
+  it('windy_forecast_sounding accepts `ecmwf-hres` qual and sends `ecmwf` upstream (#10)', async () => {
+    let receivedOpts: Record<string, unknown> | undefined;
+    const s = stubMethod('sounding', async function (this: WindyClient, ..._args: unknown[]) {
+      receivedOpts = _args[2] as Record<string, unknown>;
+      return { header: { model: 'ECMWF-HRES', refTime: 't', lat: 0, lon: 0, step: 3 }, timesteps: [] } as never;
+    });
+    restores.push(s.restore);
+
+    const { tables } = mountDripline();
+    const t = tables.get('windy_forecast_sounding')!;
+    await drain(t.list!({
+      connection: { config: { uid: 'drip-sound-in' } },
+      quals: [
+        { column: 'lat', operator: '=', value: 1 },
+        { column: 'lon', operator: '=', value: 2 },
+        { column: 'model', operator: '=', value: 'ecmwf-hres' },
+      ],
+    }));
+    expect(receivedOpts?.model).toBe('ecmwf');
+  });
+
+  it('windy_forecast_meteogram normalizes ECMWF-HRES → ecmwf both directions (#10)', async () => {
+    let receivedOpts: Record<string, unknown> | undefined;
+    const s = stubMethod('meteogram', async function (this: WindyClient, ..._args: unknown[]) {
+      receivedOpts = _args[2] as Record<string, unknown>;
+      return {
+        header: { model: 'ECMWF-HRES', refTime: '2026-05-22T12:00:00Z', step: 3 },
+        data: { hours: [1_700_000_000_000] },
+      } as never;
+    });
+    restores.push(s.restore);
+
+    const { tables } = mountDripline();
+    const t = tables.get('windy_forecast_meteogram')!;
+    const rows = await drain(t.list!({
+      connection: { config: { uid: 'drip-mg' } },
+      quals: [
+        { column: 'lat', operator: '=', value: 1 },
+        { column: 'lon', operator: '=', value: 2 },
+        { column: 'model', operator: '=', value: 'ecmwf-hres' },
+        { column: 'level', operator: '=', value: 'surface' },
+      ],
+    }));
+    expect(receivedOpts?.model).toBe('ecmwf');
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) expect(r.model).toBe('ecmwf');
+  });
 });
 
 describe('runline plugin tolerates nearbyTides 404 via client (#6)', () => {
