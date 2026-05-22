@@ -554,7 +554,7 @@ export function buildProgram(): Command {
   alerts
     .command('cap <lat,lon>')
     .description('Government-issued severe weather alerts (CAP).')
-    .option('--max <n>', 'max alerts', '6')
+    .option('--max <n>', 'max alerts (server caps at 10; higher values are clamped)', '6')
     .action((latlon, opts) =>
       withClient(async (c) => {
         const [lat, lon] = parseLatLon(latlon);

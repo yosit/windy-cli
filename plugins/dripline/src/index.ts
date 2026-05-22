@@ -1427,12 +1427,13 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       const lat = qNum(ctx.quals, "query_lat");
       const lon = qNum(ctx.quals, "query_lon");
       if (lat == null || lon == null) return;
-      // Server caps maxCount at 10. Clamp to avoid 400.
-      const userMax = qNum(ctx.quals, "max_count");
-      const maxCount = userMax != null ? Math.min(userMax, 10) : undefined;
+      // Server caps maxCount at 10; the client transparently clamps so all
+      // surfaces (CLI / runline / dripline) get the same treatment.
       try {
         const c = getClient(ctx);
-        const rows: CapAlert[] | null = await c.capAlerts(lat, lon, { maxCount });
+        const rows: CapAlert[] | null = await c.capAlerts(lat, lon, {
+          maxCount: qNum(ctx.quals, "max_count"),
+        });
         for (const a of rows ?? []) {
           yield {
             query_lat: lat, query_lon: lon,

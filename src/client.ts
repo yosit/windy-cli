@@ -457,17 +457,26 @@ export class WindyClient {
 
   // ── Alerts ─────────────────────────────────────────────────────────────
 
-  /** Public CAP (government-issued severe weather) alerts at a location. */
+  /**
+   * Public CAP (government-issued severe weather) alerts at a location.
+   *
+   * @param opts.maxCount Maximum alerts to return. Default 6. **Server caps at
+   * 10** — values >10 return HTTP 400 (`maxCount must not be greater than 10`).
+   * The client transparently clamps to 10 to avoid the error.
+   */
   async capAlerts(
     lat: number,
     lon: number,
     opts: { maxCount?: number; source?: string } = {},
   ): Promise<CapAlert[] | null> {
+    // Server enforces maxCount <= 10. Clamp here so all surfaces (CLI, runline,
+    // dripline) benefit without duplicating the constraint.
+    const maxCount = Math.min(Math.max(1, opts.maxCount ?? 6), 10);
     return this.request<CapAlert[] | null>(`/capalerts/${fmt(lat)}/${fmt(lon)}`, {
       qs: {
         source: opts.source ?? 'hp',
         lang: this.lang,
-        maxCount: opts.maxCount ?? 6,
+        maxCount,
       },
     });
   }

@@ -477,7 +477,7 @@ export default function windy(rl: RunlinePluginAPI) {
     inputSchema: {
       lat: { type: "number", required: true, description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N). Example: 32.0853." },
       lon: { type: "number", required: true, description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E). Example: 34.7818." },
-      maxCount: { type: "number", required: false, description: "Maximum alerts to return. Default 6. **Server caps at 10** — values >10 fail with HTTP 400 (`maxCount must not be greater than 10`). Pass 10 for max coverage.", default: 6 },
+      maxCount: { type: "number", required: false, description: "Maximum alerts to return. Default 6. Server caps at 10 — higher values are transparently clamped by the client (no 400 error).", default: 6 },
     },
     async execute(input: Input, ctx: Ctx) {
       const c = getClient(ctx);
