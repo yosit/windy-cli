@@ -711,6 +711,117 @@ Response: `{ts: number[], "wind_u-surface": number[], "temp-850h": number[], ...
 
 `W.http.createEventSource` exists, but no WebSocket / EventSource connections were observed during home page + detail panel browsing. Likely used for radar archive playback / live lightning.
 
+## Field Value Vocabularies (Phase 4b sample, 2026-05-22)
+
+The vocabularies below come from a 50-coord global sweep — anything not in this table is *unverified*. Where the vocabulary is open or sample-thin, the note says so explicitly so plugin descriptions don't lie.
+
+### CAP alerts — the most consequential surprise
+
+windy's `/capalerts/{lat}/{lon}` returns a **flat** object, **not** the wrapped CAP-standard envelope. The legacy `CapAlert { sender, sent, status, msgType, scope, info: { … } }` type in `types.ts` was wrong end-to-end and the dripline table was yielding undefined for every alert field. Real shape:
+
+```json
+{
+  "id": "23320519",
+  "start": 1779464040000,
+  "end":   1779511500000,
+  "type": "F",
+  "severity": "S",
+  "event": "Flood Watch",
+  "headline": "Flood Watch issued May 22 at 10:34AM CDT until May 25 at 7:00PM CDT by NWS Houston/Galveston TX",
+  "startLocal": { "weekday": "FRI", "day": "22", "month": "May", "year": "2026", "hour": "10" },
+  "endLocal":   { "weekday": "FRI", "day": "22", "month": "May", "year": "2026", "hour": "23" }
+}
+```
+
+Observed value vocabularies (1 alert per category in the sample — likely incomplete):
+
+| Field | Observed | Notes |
+|-------|----------|-------|
+| `type` | `F` (Flood), `T` (Thunderstorms), `W` (Wind) | Single-letter code, NOT a CAP category string. More letters certainly exist; cross-reference with `event` for the human label. |
+| `severity` | `M` (likely Minor/Moderate), `S` (likely Severe) | Single-letter code, NOT a CAP severity string. Mapping is approximate until more alerts sampled. |
+| `event` | `Flood Watch`, `Thunderstorms`, `Wind` | Short human label. Localized to `WINDY_LANG`. |
+| `startLocal.weekday` | `FRI` (the only one in-sample) | 3-letter uppercase, follows `Weekday` enum. |
+
+**Server constraint:** `maxCount > 10` returns HTTP 400 (`maxCount must not be greater than 10`). Both runline + dripline clamp to 10.
+
+### Search / `windy_places` — type vocabulary is open
+
+I previously described `type` as ∈ {city, suburb, suburb_part, state, country, webcam}. Phase 4b across 6 queries × 4 bias coords returned **26 distinct categories**, all OpenStreetMap-style:
+
+`aeroway`, `bus_stop`, `city`, `city_district`, `country`, `fuel`, `hamlet`, `historic`, `hostel`, `hotel`, `landuse`, `leisure`, `parking`, `pg` (paragliding), `place`, `railway`, `state`, `state_district`, `station`, `suburb`, `suburb_part`, `surf`, `town`, `village`, `webcam`, `wood`.
+
+Treat as open vocabulary — windy proxies OSM data.
+
+### Country code (`cc`, `country_code`)
+
+100% of sampled rows are **lowercase 2-letter ISO 3166-1 alpha-2** (580 search results, 12 reverse-geocodes, 2 favourites). `Antarctica` → `aq`. Open ocean / north pole → empty `{}` (no country fields at all).
+
+### Stations (`windy_stations_nearby`)
+
+| Field | Observed (88 rows, 6 cities) |
+|-------|------------------------------|
+| `type` | `madis` (35), `wmo` (22), `pws` (19), `ad` (10), `ship` (2). My docs were missing `ship`. |
+| `is_airport` | Always `undefined`. Filter on `type='ad'` instead. The flag appears only in observation-endpoint headers, not the nearby list. |
+
+### Station observations (`windy_station_observations`)
+
+Real `obs.data` keys (from `c.observations('ad','LLBG',3,1)`):
+`temp`, `wind`, `windDir`, `dewPoint`, `pressure`, `weathercode`, `visibility`, `category`.
+
+Critical mismatch I fixed: I had a column `dir` mapped to `rowJson.dir` — but the wire key is `windDir` (camelCase). Renamed column to `wind_dir`, added a fallback alias chain `windDir ?? wind_dir ?? dir` for safety. Also added `dew_point`, `visibility`, `weathercode`, `category` columns that were previously buried in `raw`.
+
+Header has ~21 keys (not just the 8 in the `ObservationHeader` interface): `subtype`, `is_airport`, `avg_delay_min`, `obs_count`, `latest_obs`, `desc`, `observation`, `duplicityId`, `duplicityType`, etc. Not currently surfaced as columns — accessible via `header_raw` (TODO: add for obs table).
+
+### Airports / runways
+
+| Field | Observed | Notes |
+|-------|----------|-------|
+| `subtype` | `large_airport`, `medium_airport`, `small_airport` (8/3/2 across 15 ICAOs) | Heliport / seaplane_base documented but not in sample. |
+| `scheduled_service` | `yes`, `no` (string, not boolean) | Plugin converts to boolean. |
+| `runway.surface` | `ASP`, `ASPH`, `ASPH-G`, `PEM`, `CON`, `Grass`, `WATER` | Mix of 3-letter, 4-letter, and full words. NOT well-normalized — match with `LIKE` or normalize before filtering. |
+| `runway.closed` | `0` (23/23) | Sample skewed toward operational airports. |
+| `runway.lighted` | `1` (23/23) | Sample skewed toward modern airports. |
+
+### Storms
+
+Phase 4b caught only 1 active storm globally (a `strength: 0` tropical depression with `windSpeed: 9.8` m/s). Saffir-Simpson 0..5 is the doc-stated scale; can't verify higher categories without an active hurricane. Description retains "0 = tropical depression, 1..5 hurricane category" but the upper end is **unverified** from sampling.
+
+`stormsCount` response shape: `{activeStormCount: <n>}` (NOT `{count: <n>}` as the type hinted). Plugin handles both.
+
+### Forecast model manifest
+
+I previously described `manifest->'refTimes'` as the run list — wrong. Real top-level keys: `dst` (active run id), `info`, `ref` (canonical ref-time), `update` (ISO), `v` (version), `end` (final timestep), `urls` (tile URL templates).
+
+### Subscription (`/api/info` for premium accounts)
+
+| Field | Observed |
+|-------|----------|
+| `subscription` | `premium`. `free` is the implicit complement (null/missing). |
+| `subscriptionInfo.tier` | `premium`. |
+| `subscriptionInfo.status` | `active`. Other states (`inactive`, `cancelled`, `trialing`) likely exist on lapsed accounts. |
+| `subscriptionInfo.platform` | `fastspring`. App-store subscribers likely report `apple` / `google` — not in sample. |
+| `subscriptionInfo.state` | `ok`. Not currently surfaced as a column. |
+
+### Favourites
+
+| Field | Observed (2 rows) |
+|-------|-------------------|
+| `value.type` | `fav` |
+| `value.version` | `50.0.3` (matches `APP_VERSION` constant — windy stamps the client version on save) |
+| `value.cc` | `il` (lowercase 2-letter; same as search/reverse) |
+
+### Reproducing the sample
+
+```bash
+WINDY_DISABLE_LOGIN_THROTTLE=1 node -e "
+const {WindyClient} = require('./dist/index.js');
+const c = WindyClient.fromEnv();
+c.capAlerts(29.7604, -95.3698, { maxCount: 10 }).then(r => console.log(JSON.stringify(r, null, 2)));
+"
+```
+
+The full sampler used to generate the table above lives in `/tmp/windy-sampler.mjs` during the sampling session; re-run when adding endpoints or after major windy feature releases.
+
 ## Methodology — digest-system v0.4 applied (2026-05-22)
 
 The repo follows the digest-system skill methodology. Phases applied:

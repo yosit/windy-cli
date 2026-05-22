@@ -132,7 +132,7 @@ export default function windy(rl: RunlinePluginAPI) {
 
   rl.registerAction("forecast.point", {
     description:
-      "Hourly multi-day forecast for one coordinate. Use when the user asks 'will it rain in N hours' or wants a temp/wind/precip series. Returns `{header, data, now, summary?}`; `data` arrays are parallel to `data.ts`. Pass `setup:'summary'` for daily aggregates.",
+      "Hourly multi-day forecast for one coord — temp/wind/precip series. Returns `{header, data, now?, summary?}`; `data.*` arrays parallel to `data.ts`. Pass `setup:'summary'` for daily aggregates.",
     inputSchema: {
       lat: { type: "number", required: true, description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N). Example: 32.0853 for Tel Aviv." },
       lon: { type: "number", required: true, description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E). Example: 34.7818 for Tel Aviv." },
@@ -446,7 +446,7 @@ export default function windy(rl: RunlinePluginAPI) {
 
   rl.registerAction("tides.point", {
     description:
-      "Tide-height forecast at the port nearest a coord. Use for sailing / fishing / coastal-access questions. For a specific port use `tides.byPoi`. Returns `{header, data, extremes}` — `data.height` parallels `data.ts`.",
+      "Tide-height forecast at port nearest a coord. Use for sailing/fishing/coastal access. For a specific port use `tides.byPoi`. Returns `{header, data, extremes}`; `data.height` parallels `data.ts`.",
     inputSchema: {
       lat: { type: "number", required: true, description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N). Example: 32.0853." },
       lon: { type: "number", required: true, description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E). Example: 34.7818." },
@@ -473,11 +473,11 @@ export default function windy(rl: RunlinePluginAPI) {
 
   rl.registerAction("alerts.cap", {
     description:
-      "Government-issued severe-weather alerts (CAP) in effect at a location — flood / storm / fire / heat. Public, no auth. For PERSONAL alerts the user subscribed to see `alerts.live`.",
+      "Government-issued severe-weather alerts at a location. Public, no auth. Returns a FLAT shape with single-letter `type` (`F`/`T`/`W`/…) and `severity` (`M`/`S`/…) codes plus `event` label, `headline` sentence, and `start`/`end` unix-ms windows — NOT the wrapped CAP envelope. For PERSONAL threshold alarms see `alerts.live`.",
     inputSchema: {
       lat: { type: "number", required: true, description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N). Example: 32.0853." },
       lon: { type: "number", required: true, description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E). Example: 34.7818." },
-      maxCount: { type: "number", required: false, description: "Maximum alerts to return. Default 6. Use a higher value (e.g. 50) when you suspect multiple concurrent alerts at the location.", default: 6 },
+      maxCount: { type: "number", required: false, description: "Maximum alerts to return. Default 6. **Server caps at 10** — values >10 fail with HTTP 400 (`maxCount must not be greater than 10`). Pass 10 for max coverage.", default: 6 },
     },
     async execute(input: Input, ctx: Ctx) {
       const c = getClient(ctx);
@@ -512,7 +512,7 @@ export default function windy(rl: RunlinePluginAPI) {
 
   rl.registerAction("storms.list", {
     description:
-      "Currently-active tropical cyclones worldwide. Use for hurricane / typhoon / cyclone questions. Returns `{storms, models, defaultCircles}`; storm `strength` is Saffir-Simpson category (0 = tropical depression).",
+      "Active tropical cyclones worldwide. Use for hurricane/typhoon/cyclone questions. Returns `{storms, models, defaultCircles}`; `strength` = Saffir-Simpson 0..5 (0 = tropical depression).",
     inputSchema: {},
     async execute(_input: Input, ctx: Ctx) {
       const c = getClient(ctx);
@@ -605,7 +605,7 @@ export default function windy(rl: RunlinePluginAPI) {
 
   rl.registerAction("airports.info", {
     description:
-      "Airport info by ICAO — name, elevation, runways (with headings + surface), latest METAR/TAF, frequencies. Use for aviation context (alternate planning, METAR/TAF lookup, runway alignment with surface wind).",
+      "Airport info by ICAO — name, elevation, runways (heading + surface), latest METAR/TAF, frequencies. Use for aviation context: alternate planning, METAR/TAF, runway/wind alignment.",
     inputSchema: {
       icao: { type: "string", required: true, description: "ICAO 4-letter airport code, case-insensitive. Examples: `KJFK` (JFK), `EGLL` (Heathrow), `LLBG` (Ben Gurion). Use IATA→ICAO lookups if you only have a 3-letter code." },
     },

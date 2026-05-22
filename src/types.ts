@@ -350,28 +350,50 @@ export interface WebcamList {
 
 // ── Alerts ────────────────────────────────────────────────────────────────
 
-export interface CapAlertInfo {
-  category: string;
-  event: string;
-  urgency: string;
-  severity: string;
-  certainty: string;
-  effective: string;
-  expires: string;
-  headline: string;
-  description: string;
-  instruction: string;
-  area?: unknown;
+/**
+ * Local-time decomposition that windy attaches to alert start/end timestamps.
+ * All fields are strings as the server delivers them (note: `hour` is `"00"`-padded as a string, weekday is the 3-letter code).
+ */
+export interface CapAlertLocalTime {
+  weekday: Weekday;
+  /** Day-of-month, 2-digit string (`"01"`..`"31"`). */
+  day: string;
+  /** Localized month name (`"May"`, `"Jan"`, etc.) — language follows `WINDY_LANG`. */
+  month: string;
+  /** 4-digit year (`"2026"`). */
+  year: string;
+  /** Hour-of-day, 24h, 2-digit string (`"00"`..`"23"`). */
+  hour: string;
 }
 
+/**
+ * windy CAP alert as actually returned by `/capalerts/{lat}/{lon}`.
+ *
+ * Note this is **not** the wrapped CAP-standard envelope (`sender`/`sent`/`status`/`msgType`/`scope`/`info`).
+ * windy flattens to a single object with single-letter `type`/`severity` codes plus a localized `event` label and `headline` sentence.
+ *
+ * Observed `type` codes (Phase 4b sample): `"F"` (Flood), `"T"` (Thunderstorms), `"W"` (Wind). More likely exist.
+ * Observed `severity` codes (Phase 4b sample): `"M"` (Minor/Moderate), `"S"` (Severe). More likely exist.
+ */
 export interface CapAlert {
+  /** Alert id from the issuing authority (numeric string). */
   id: string;
-  sender: string;
-  sent: string;
-  status: string;
-  msgType: string;
-  scope: string;
-  info: CapAlertInfo;
+  /** Start of the alert window, unix milliseconds UTC. */
+  start: number;
+  /** End of the alert window, unix milliseconds UTC. */
+  end: number;
+  /** Single-letter category code. Observed: `F`, `T`, `W`. */
+  type: string;
+  /** Single-letter severity code. Observed: `M`, `S`. */
+  severity: string;
+  /** Short human-readable event label (e.g. "Flood Watch", "Thunderstorms", "Wind"). Localized to `WINDY_LANG`. */
+  event: string;
+  /** Full alert sentence as published (e.g. "Flood Watch issued May 22 at 10:34AM CDT until May 25 at 7:00PM CDT by NWS Houston/Galveston TX"). */
+  headline: string;
+  /** Start of the alert window in the location's local time, decomposed. */
+  startLocal: CapAlertLocalTime;
+  /** End of the alert window in the location's local time, decomposed. */
+  endLocal: CapAlertLocalTime;
 }
 
 export interface LiveAlertsResponse {

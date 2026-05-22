@@ -191,7 +191,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
   // ── windy_forecast_point ────────────────────────────────────────────────
   dl.registerTable("windy_forecast_point", {
     description:
-      "Multi-day point forecast — one row per timestep. Use when the user asks for hour-by-hour weather (temp/wind/precip/pressure) at a coordinate. Filter by `model` (default ecmwf), `step` (1/3/6 h), `ref_time` (ISO). For daily aggregates see `windy_forecast_summary`; for upper-air see `windy_forecast_sounding`.",
+      "Multi-day hourly point forecast — one row per timestep (temp/wind/precip/pressure). Filter `lat`,`lon`,`model`,`step`,`ref_time`. Daily: `windy_forecast_summary`; upper-air: `windy_forecast_sounding`.",
     columns: [
       { name: "lat", type: "number", description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N)." },
       { name: "lon", type: "number", description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E)." },
@@ -420,7 +420,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
   // Pressure-level sounding (skew-T) — meteogram pivoted into per-(ts, level).
   dl.registerTable("windy_forecast_sounding", {
     description:
-      "Pressure-level sounding (skew-T). One row per (timestep, pressure level). Use for aviation, glider, paragliding, or any upper-air question — wind/temp/dewpoint/RH/height at 17 standard levels from surface up to 10 hPa.",
+      "Pressure-level sounding (skew-T) — one row per (timestep, level). Use for aviation/glider/paragliding or upper-air questions. 17 levels surface→10 hPa with wind/temp/dewpoint/RH/height.",
     columns: [
       { name: "lat", type: "number", description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N)." },
       { name: "lon", type: "number", description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E)." },
@@ -503,7 +503,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
   // One row per (timestep, level).
   dl.registerTable("windy_forecast_meteogram", {
     description:
-      "Raw multi-level meteogram — one row per (timestep, level). Use when you need all parameters the meteogram endpoint exposes: per-level temp/dewpoint/RH/geopot height/wind PLUS surface-only fields (cape, ptype, gust, precip, snow, pressure, clouds). For just the 6 standard upper-air params use `windy_forecast_sounding`; for surface time-series use `windy_forecast_point`.",
+      "Full meteogram — one row per (timestep, level). Per-level temp/dewpoint/RH/gh/wind + surface cape/ptype/gust/precip/snow/pressure/clouds. Lighter: `windy_forecast_sounding` or `windy_forecast_point`.",
     columns: [
       { name: "lat", type: "number", description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N)." },
       { name: "lon", type: "number", description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E)." },
@@ -625,7 +625,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
   // ── windy_forecast_air_quality ─────────────────────────────────────────
   dl.registerTable("windy_forecast_air_quality", {
     description:
-      "Air-quality forecast time-series (CAMS global or CAMS-Europe). One row per timestep. Use when the user asks about pollutant forecasts (NO2/O3/PM2.5/PM10/SO2/CO/AQI). For measured values at stations see `windy_station_air_quality` and `windy_stations_nearby_air_quality`.",
+      "Air-quality forecast — one row per timestep with NO2/O3/PM2.5/PM10/SO2/CO/AQI. `model` ∈ {`cams` (default), `camsEu`}. For OBSERVED AQ see `windy_stations_nearby_air_quality`.",
     columns: [
       { name: "lat", type: "number", description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N)." },
       { name: "lon", type: "number", description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E)." },
@@ -693,11 +693,11 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
   // ── windy_forecast_models ──────────────────────────────────────────────
   dl.registerTable("windy_forecast_models", {
     description:
-      "Forecast model manifest (raw JSON). Use when the user asks which model runs are available, when the last run was issued, or what `ref_time` to pass to other forecast tables. Filter by `model` (default `ecmwf-hres`).",
+      "Forecast model manifest — available runs, refresh times, premium gating. Use to discover a `ref_time` to pass to other forecast tables. Filter by `model` (default `ecmwf-hres`) and `premium`.",
     columns: [
       { name: "model", type: "string", description: "Forecast model id (e.g. `ecmwf`, `gfs`, `icon`)." },
       { name: "premium", type: "boolean", description: "Whether the manifest reflects premium-tier reftimes (faster refresh) or free-tier only." },
-      { name: "manifest", type: "json", description: "Full model-manifest payload. Top-level keys: `refTimes` (array of ISO strings), `forecast.hours`, plus per-model metadata. Inspect with `manifest->'refTimes'`." },
+      { name: "manifest", type: "json", description: "Full model-manifest payload. Phase 4b observed top-level keys: `dst` (active model-run id), `info`, `ref` (canonical ref-time), `update` (ISO), `v` (version), `end` (final timestep), `urls` (tile URL templates). Use `manifest->'dst'` for the latest run; `manifest->'ref'` for its ISO timestamp." },
     ],
     keyColumns: [
       { name: "model", required: "optional" },
@@ -728,7 +728,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       { name: "lat", type: "number", description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N)." },
       { name: "lon", type: "number", description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E)." },
       { name: "title", type: "string", description: "Display name of the matched place (e.g. \"Tel Aviv, Israel\")." },
-      { name: "type", type: "string", description: "Match category. One of: `city`, `suburb`, `suburb_part`, `state`, `country`, `webcam`. Filter on this to narrow result kinds." },
+      { name: "type", type: "string", description: "Match category — OpenStreetMap-style category names (windy proxies OSM data here). Phase 4b observed (~25): `aeroway`, `bus_stop`, `city`, `city_district`, `country`, `fuel`, `hamlet`, `historic`, `hostel`, `hotel`, `landuse`, `leisure`, `parking`, `pg`, `place`, `railway`, `state`, `state_district`, `station`, `suburb`, `suburb_part`, `surf`, `town`, `village`, `webcam`, `wood`. More likely exist; treat as open vocabulary." },
       { name: "cc", type: "string", description: "ISO 3166-1 alpha-2 country code, lowercase (e.g. `il`, `us`, `de`)." },
       { name: "country", type: "string", description: "Country display name in the user's `lang` (e.g. \"Israel\")." },
       { name: "region", type: "string", description: "Region within the country (geographic / administrative subdivision)." },
@@ -778,7 +778,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
   // ── windy_geo_reverse ──────────────────────────────────────────────────
   dl.registerTable("windy_geo_reverse", {
     description:
-      "Reverse-geocode a coordinate to suburb / city / district / state / country. Single row. Use when the user has lat/lon and needs a human-readable place name. `zoom` 14 ≈ neighborhood, 10 ≈ city.",
+      "Reverse-geocode a coordinate to suburb / city / district / state / country. Single row. Use when the user has lat/lon and needs a human-readable place name. `zoom` 14 ≈ neighborhood, 10 ≈ city. NOTE: open-ocean and polar coords return an empty row (every field null) — verified at 0,-150 and 89,0 in Phase 4b. Antarctica resolves cleanly (`country='Antarctica', country_code='aq'`).",
     columns: [
       { name: "lat", type: "number", description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N)." },
       { name: "lon", type: "number", description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E)." },
@@ -891,13 +891,13 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
   // ── windy_stations_nearby ──────────────────────────────────────────────
   dl.registerTable("windy_stations_nearby", {
     description:
-      "Nearby ground weather stations (airport METAR + WMO + PWS + MADIS). Use when the user wants OBSERVED weather (vs. forecast) at the closest reporting site. For per-station history join on `id` into `windy_station_observations`. Distance in km.",
+      "Nearby ground stations (METAR/WMO/PWS/MADIS) with latest obs — OBSERVED weather vs forecast. Distance in km. Join `id` into `windy_station_observations` for history.",
     columns: [
       { name: "query_lat", type: "number", description: "Latitude passed in WHERE — echoed for joins. Decimal degrees." },
       { name: "query_lon", type: "number", description: "Longitude passed in WHERE — echoed for joins. Decimal degrees." },
       { name: "id", type: "string", description: "Station identifier in `<type>-<bare-id>` form (e.g. `airq-1029`)." },
       { name: "name", type: "string", description: "Display name of the station." },
-      { name: "type", type: "string", description: "Station network. One of: `ad` (airport METAR), `wmo`, `pws`, `madis`, `airq`." },
+      { name: "type", type: "string", description: "Station network. Phase 4b observed: `madis`, `wmo`, `pws`, `ad` (airport METAR), `ship` (ship-borne reports). `airq` is documented but not returned by this endpoint (use `windy_stations_nearby_air_quality` for those)." },
       { name: "lat", type: "number", description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N)." },
       { name: "lon", type: "number", description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E)." },
       { name: "dist_km", type: "number", description: "Great-circle distance from the query point to this station/POI, kilometers." },
@@ -913,7 +913,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       { name: "rh_pct", type: "number", description: "Relative humidity, percent (0–100)." },
       { name: "dew_point_c", type: "number", description: "Dewpoint at the station, Celsius." },
       { name: "wx_icon", type: "number", description: "Windy weather-icon code for this station's current conditions (same vocabulary as `icon`)." },
-      { name: "is_airport", type: "boolean", description: "True if this station is an airport METAR reporter (vs WMO synoptic / PWS / MADIS)." },
+      { name: "is_airport", type: "boolean", description: "Filterable hint that the station is an airport METAR reporter. Phase 4b observed: always null in nearby-station rows — use `type = 'ad'` instead. The flag appears in observation-endpoint headers, not the nearby list." },
     ],
     keyColumns: [
       { name: "query_lat", required: "required" },
@@ -947,13 +947,13 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
   // ── windy_stations_nearby_air_quality ──────────────────────────────────
   dl.registerTable("windy_stations_nearby_air_quality", {
     description:
-      "Nearby measured air-quality stations (AQI snapshot). Use for OBSERVED AQ. For detailed pollutant breakdown of a single station join `id` into `windy_station_air_quality`. For forecast AQ use `windy_forecast_air_quality`.",
+      "Nearby measured AQ stations with current AQI snapshot. Join `id` into `windy_station_air_quality` for full pollutant breakdown. For forecast AQ use `windy_forecast_air_quality`.",
     columns: [
       { name: "query_lat", type: "number", description: "Latitude passed in WHERE — echoed for joins. Decimal degrees." },
       { name: "query_lon", type: "number", description: "Longitude passed in WHERE — echoed for joins. Decimal degrees." },
-      { name: "id", type: "string", description: "Stable identifier for the entity in this row." },
-      { name: "name", type: "string", description: "Display name." },
-      { name: "data_source", type: "string", description: "Upstream data provider (e.g. `NOAA`, `WMO`, `EEA`, `OpenAQ`, `Weatherflow`). Useful for sourcing/QA." },
+      { name: "id", type: "string", description: "AQ-station id with `airq-` prefix (e.g. `airq-1029`). Pass to `windy_station_air_quality.id`." },
+      { name: "name", type: "string", description: "Display name of the AQ station (e.g. \"Holon\", \"Tel Aviv University\")." },
+      { name: "data_source", type: "string", description: "Upstream provider name. Phase 4b observed: `openaq.org` (aggregator), `PurpleAir` (PWS PM2.5 network). Free-form string — treat as open vocabulary." },
       { name: "lat", type: "number", description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N)." },
       { name: "lon", type: "number", description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E)." },
       { name: "dist_km", type: "number", description: "Great-circle distance from the query point to this station/POI, kilometers." },
@@ -995,8 +995,8 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
     columns: [
       { name: "query_lat", type: "number", description: "Latitude passed in WHERE — echoed for joins. Decimal degrees." },
       { name: "query_lon", type: "number", description: "Longitude passed in WHERE — echoed for joins. Decimal degrees." },
-      { name: "id", type: "string", description: "Stable identifier for the entity in this row." },
-      { name: "name", type: "string", description: "Display name." },
+      { name: "id", type: "string", description: "Tide-POI id (e.g. `tide-1234`). Pass to `windy_tides.poi_id` / `windy_tide_extremes.poi_id`." },
+      { name: "name", type: "string", description: "Tide-port display name (e.g. \"Haifa\", \"Aberdeen\")." },
       { name: "lat", type: "number", description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N)." },
       { name: "lon", type: "number", description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E)." },
       { name: "dist_km", type: "number", description: "Great-circle distance from the query point to this station/POI, kilometers." },
@@ -1042,7 +1042,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       { name: "lon", type: "number", description: "POI longitude, decimal degrees." },
       { name: "name", type: "string", description: "Display name of the AQ station." },
       { name: "time", type: "string", description: "Timestamp of the latest measurement, ISO-8601 UTC (e.g. `2026-05-13T20:00:00Z`)." },
-      { name: "data_source", type: "string", description: "Upstream data provider (e.g. `NOAA`, `WMO`, `EEA`, `OpenAQ`, `Weatherflow`). Useful for sourcing/QA." },
+      { name: "data_source", type: "string", description: "Upstream provider name. Phase 4b observed: `openaq.org` (aggregator), `PurpleAir` (PWS PM2.5 network). Free-form string — treat as open vocabulary." },
       { name: "source", type: "string", description: "Original publisher/aggregator of the measurement (server-defined; e.g. `openaq`, `eea`, `airnow`)." },
       { name: "station_id", type: "string", description: "Source station id as the upstream provider issued it (may include prefixes the windy `id` lacks)." },
       { name: "rank", type: "number", description: "Server-assigned priority for the station in nearby/list queries — lower is ranked higher." },
@@ -1092,7 +1092,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
   // ── windy_station_observations ─────────────────────────────────────────
   dl.registerTable("windy_station_observations", {
     description:
-      "Historical observed time-series for one station — temp / wind / gust / pressure / RH / precip. Use to backtest a forecast, build a microclimate baseline, or grab METAR history. `station_type` ∈ {airq, ad, wmo, pws, madis}. Common params surfaced as columns; full row in `raw`.",
+      "Historical obs time-series for one station — temp / wind / windDir / dewPoint / pressure / visibility / weathercode / category. Use to backtest a forecast or grab METAR history. `station_type` ∈ {airq, ad, wmo, pws, madis}. Server data-keys are camelCase; the table mirrors them.",
     columns: [
       { name: "station_type", type: "string", description: "Station network. One of: `airq`, `ad`, `wmo`, `pws`, `madis`. Echoed from the WHERE filter." },
       { name: "station_id", type: "string", description: "Station id (without type prefix). Echoed from the WHERE filter." },
@@ -1101,15 +1101,19 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       { name: "lon", type: "number", description: "Station longitude, decimal degrees, WGS-84." },
       { name: "ts_ms", type: "number", description: "Observation timestamp, unix milliseconds UTC." },
       { name: "ts", type: "datetime", description: "Observation timestamp as ISO-8601." },
-      { name: "temp", type: "number", description: "Observed temperature. Units depend on `station_type`: airport/METAR stations report °C; check `raw` if unsure." },
+      { name: "temp", type: "number", description: "Observed temperature. Units depend on `station_type`: METAR (`ad`) typically °C; PWS may report °C or °F — check `raw` if unsure." },
       { name: "wind", type: "number", description: "Observed wind speed, m/s." },
-      { name: "gust", type: "number", description: "Observed gust speed, m/s." },
-      { name: "dir", type: "number", description: "Observed wind FROM direction, meteorological degrees (0/360 = N)." },
-      { name: "pressure", type: "number", description: "Observed pressure. Typically hPa (=mbar) for METAR/WMO; PWS may report station-pressure." },
-      { name: "rh", type: "number", description: "Observed relative humidity, percent (0–100)." },
+      { name: "wind_dir", type: "number", description: "Observed wind FROM direction, meteorological degrees (0/360 = N). Server key is `windDir`." },
+      { name: "gust", type: "number", description: "Observed gust speed, m/s. May be null when the network doesn't report gusts." },
+      { name: "dew_point", type: "number", description: "Observed dewpoint temperature, same units as `temp`. Server key is `dewPoint`." },
+      { name: "pressure", type: "number", description: "Observed pressure, hPa (=mbar). METAR/WMO usually report QNH (sea-level adjusted); PWS may report station pressure." },
+      { name: "rh", type: "number", description: "Observed relative humidity, percent (0–100). Often null on METAR feeds (computed from temp/dewpoint instead — derive when needed)." },
       { name: "precip", type: "number", description: "Observed precipitation in the sampling interval, mm." },
+      { name: "visibility", type: "number", description: "Horizontal visibility, meters. METAR-derived; expect 10000 (= clear / max) on most clear-air observations." },
+      { name: "weathercode", type: "number", description: "WMO present-weather code (server-defined integer). METAR/WMO synoptic value; see WMO Table 4677 for canonical mapping." },
+      { name: "category", type: "string", description: "Flight-rules category for the observation. METAR convention: `VFR`, `MVFR`, `IFR`, `LIFR`. Populated for `station_type='ad'` (airport) rows; null for PWS." },
       { name: "aqi", type: "number", description: "Air Quality Index (only populated for `station_type='airq'`). EPA scale: 0–50 good ... 301+ hazardous." },
-      { name: "raw", type: "json", description: "Complete raw row from the obs endpoint — preserves any parameter not surfaced as a column (e.g. dewpoint, visibility, ceiling). Top-level key is the parameter name." },
+      { name: "raw", type: "json", description: "Complete raw row from the obs endpoint — preserves any parameter not surfaced as a column. Top-level keys are the server's parameter names (camelCase, e.g. `dewPoint`, `windDir`)." },
     ],
     keyColumns: [
       { name: "station_type", required: "required" },
@@ -1153,11 +1157,15 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
             ts: isoFromMs(tsArr[i]),
             temp: num(rowJson.temp),
             wind: num(rowJson.wind),
+            wind_dir: num(rowJson.windDir ?? rowJson.wind_dir ?? rowJson.dir),
             gust: num(rowJson.gust),
-            dir: num(rowJson.dir),
+            dew_point: num(rowJson.dewPoint ?? rowJson.dew_point),
             pressure: num(rowJson.pressure),
             rh: num(rowJson.rh),
             precip: num(rowJson.precip),
+            visibility: num(rowJson.visibility),
+            weathercode: num(rowJson.weathercode),
+            category: typeof rowJson.category === "string" ? rowJson.category : undefined,
             aqi: num(rowJson.aqi),
             raw: jsonOrUndef(rowJson),
           };
@@ -1172,7 +1180,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
   // Long-format heights. Use either (lat,lon) or poi_id to identify the port.
   dl.registerTable("windy_tides", {
     description:
-      "Tide-height forecast time-series for a port. Use for sailing, fishing, or coastal-access questions. Provide (`query_lat`, `query_lon`) for nearest-port lookup OR `poi_id` (from `windy_stations_nearby_tides`). Heights in meters above chart datum.",
+      "Tide-height forecast time-series. Use for sailing/fishing/coastal access. Pass (`query_lat`,`query_lon`) for nearest port OR `poi_id` (from `windy_stations_nearby_tides`). Heights in m above datum.",
     columns: [
       { name: "query_lat", type: "number", description: "Latitude passed in WHERE — echoed for joins. Decimal degrees." },
       { name: "query_lon", type: "number", description: "Longitude passed in WHERE — echoed for joins. Decimal degrees." },
@@ -1280,12 +1288,12 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
   // ── windy_storms ───────────────────────────────────────────────────────
   dl.registerTable("windy_storms", {
     description:
-      "Currently-active tropical cyclones worldwide — one row per named storm. Use for hurricane / typhoon / cyclone questions. `wind_speed_ms` is sustained wind; `strength` is Saffir-Simpson category (0 = tropical depression).",
+      "Active tropical cyclones worldwide — one row per named storm. Use for hurricane/typhoon/cyclone questions. `wind_speed_ms` = sustained wind; `strength` = Saffir-Simpson 0..5 (0 = tropical depression).",
     columns: [
-      { name: "id", type: "string", description: "Stable identifier for the entity in this row." },
-      { name: "name", type: "string", description: "Display name." },
-      { name: "lat", type: "number", description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N)." },
-      { name: "lon", type: "number", description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E)." },
+      { name: "id", type: "string", description: "Storm id assigned by windy/JTWC/NHC (stable for the storm's lifetime)." },
+      { name: "name", type: "string", description: "Storm name as issued by the warning center (e.g. `IRMA`, `HAIKUI`)." },
+      { name: "lat", type: "number", description: "Current storm-center latitude, decimal degrees, WGS-84." },
+      { name: "lon", type: "number", description: "Current storm-center longitude, decimal degrees, WGS-84." },
       { name: "strength", type: "number", description: "Saffir-Simpson category. 0 = tropical depression, 1..5 = hurricane category. Higher = stronger." },
       { name: "wind_speed_ms", type: "number", description: "Sustained wind speed, m/s. Knots = wind_speed_ms × 1.944." },
     ],
@@ -1310,16 +1318,18 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
     description:
       "Count of active tropical cyclones (single row). Use as a cheap probe before fetching the full `windy_storms` list.",
     columns: [
-      { name: "count", type: "number", description: "Number of currently-active tropical cyclones worldwide." },
-      { name: "raw", type: "json", description: "Full raw server response (in case the count format changes)." },
+      { name: "count", type: "number", description: "Number of currently-active tropical cyclones worldwide. Server returns `{activeStormCount: <n>}` (Phase 4b verified); this column extracts the integer." },
+      { name: "raw", type: "json", description: "Full raw server response — `{activeStormCount: <n>}`." },
     ],
     async *list(ctx) {
       try {
         const c = getClient(ctx);
         const r = await c.stormsCount();
+        const obj = r as { activeStormCount?: unknown; count?: unknown } | null;
         const count =
           typeof r === "number" ? r :
-          typeof r === "object" && r !== null && "count" in r ? num((r as { count: unknown }).count) :
+          obj && "activeStormCount" in obj ? num(obj.activeStormCount) :
+          obj && "count" in obj ? num(obj.count) :
           undefined;
         yield { count, raw: jsonOrUndef(r) };
       } catch (e) {
@@ -1331,26 +1341,30 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
   // ── windy_alerts_cap ───────────────────────────────────────────────────
   dl.registerTable("windy_alerts_cap", {
     description:
-      "Government-issued severe-weather alerts (CAP feed) in effect at a location — flood / storm / fire / heat. Public, no auth needed. For PERSONAL alerts the user subscribed to see `windy_alerts_live`.",
+      "Government-issued severe-weather alerts at a location. Public, no auth needed. NOTE: windy delivers a flat shape with single-letter `type`/`severity` codes (Phase 4b verified) — NOT the wrapped CAP-standard envelope. For PERSONAL threshold alarms see `windy_alerts_live`.",
     columns: [
       { name: "query_lat", type: "number", description: "Latitude passed in WHERE — echoed for joins. Decimal degrees." },
       { name: "query_lon", type: "number", description: "Longitude passed in WHERE — echoed for joins. Decimal degrees." },
-      { name: "id", type: "string", description: "Alert id (sender + serial number; unique within source). Stable across reissues of the same alert." },
-      { name: "sender", type: "string", description: "Issuing authority (e.g. `w-nws.webmaster@noaa.gov` for US NWS, agency identifier varies by country)." },
-      { name: "sent", type: "string", description: "Alert send time, ISO-8601 with offset (e.g. `2026-05-13T21:00:00+03:00`). When the issuing authority published it." },
-      { name: "status", type: "string", description: "CAP status. One of: `Actual`, `Exercise`, `System`, `Test`, `Draft`." },
-      { name: "msg_type", type: "string", description: "CAP message type. One of: `Alert`, `Update`, `Cancel`, `Ack`, `Error`. `Cancel` supersedes a prior `Alert`." },
-      { name: "scope", type: "string", description: "CAP scope. One of: `Public`, `Restricted`, `Private`." },
-      { name: "category", type: "string", description: "Alert category. Common: `Met` (meteorological), `Geo` (geophysical), `Safety`, `Security`, `Rescue`, `Fire`, `Health`, `Env`, `Transport`, `Infra`, `CBRNE`, `Other`." },
-      { name: "event", type: "string", description: "Free-text event label issued by the sender (e.g. `\"Severe Thunderstorm Warning\"`, `\"Avalanche Risk\"`). Localized to `WINDY_LANG`." },
-      { name: "urgency", type: "string", description: "Time to act. One of: `Immediate`, `Expected`, `Future`, `Past`, `Unknown`." },
-      { name: "severity", type: "string", description: "Impact severity. One of: `Extreme`, `Severe`, `Moderate`, `Minor`, `Unknown`. Filter on this for the loudest alerts." },
-      { name: "certainty", type: "string", description: "Confidence in the prediction. One of: `Observed`, `Likely`, `Possible`, `Unlikely`, `Unknown`." },
-      { name: "effective", type: "string", description: "When the alert takes effect, ISO-8601 with offset." },
-      { name: "expires", type: "string", description: "When the alert is no longer in force, ISO-8601 with offset. Filter `expires > NOW()` for active alerts only." },
-      { name: "headline", type: "string", description: "Short alert headline as published (e.g. \"Severe Thunderstorm Warning for Tel Aviv District\"). Localized to `WINDY_LANG`." },
-      { name: "description", type: "string", description: "Detailed alert body — full prose from the issuing authority. Can be multi-paragraph." },
-      { name: "instruction", type: "string", description: "Recommended public action (e.g. \"Move to interior room.\"). May be empty for informational alerts." },
+      { name: "id", type: "string", description: "Alert id from the issuing authority (numeric string)." },
+      { name: "start_ms", type: "number", description: "Start of the alert window, unix milliseconds UTC." },
+      { name: "start", type: "datetime", description: "Start of the alert window, ISO-8601 (parallel to `start_ms`)." },
+      { name: "end_ms", type: "number", description: "End of the alert window, unix milliseconds UTC. Filter `end_ms > NOW()` (or `end_ms > epoch_ms(NOW())`) for active alerts only." },
+      { name: "end", type: "datetime", description: "End of the alert window, ISO-8601 (parallel to `end_ms`)." },
+      { name: "type", type: "string", description: "Single-letter category code (NOT a standard CAP category string). Phase 4b observed: `F` (Flood), `T` (Thunderstorms), `W` (Wind). More letters likely exist — cross-reference with `event` for the human-readable label." },
+      { name: "severity", type: "string", description: "Single-letter severity code (NOT a CAP severity string). Phase 4b observed: `M` (likely Minor/Moderate), `S` (likely Severe). Treat the mapping as approximate until you sample more alerts." },
+      { name: "event", type: "string", description: "Short human-readable label (e.g. `\"Flood Watch\"`, `\"Thunderstorms\"`, `\"Wind\"`). Localized to `WINDY_LANG`." },
+      { name: "headline", type: "string", description: "Full sentence as published by the issuing authority (e.g. \"Flood Watch issued May 22 at 10:34AM CDT until May 25 at 7:00PM CDT by NWS Houston/Galveston TX\"). Use this for display; parse `event` for filtering." },
+      { name: "start_local_weekday", type: "string", description: "Local-time weekday at alert start. 3-letter code: `MON`, `TUE`, ..., `SUN`." },
+      { name: "start_local_day", type: "string", description: "Local-time day-of-month at alert start, 2-digit string (e.g. `\"22\"`)." },
+      { name: "start_local_month", type: "string", description: "Local-time month name at alert start, localized (e.g. `\"May\"`)." },
+      { name: "start_local_year", type: "string", description: "Local-time year at alert start, 4-digit string." },
+      { name: "start_local_hour", type: "string", description: "Local-time hour at alert start, 24h 2-digit string (`\"00\"`..`\"23\"`)." },
+      { name: "end_local_weekday", type: "string", description: "Local-time weekday at alert end. 3-letter code." },
+      { name: "end_local_day", type: "string", description: "Local-time day-of-month at alert end." },
+      { name: "end_local_month", type: "string", description: "Local-time month name at alert end." },
+      { name: "end_local_year", type: "string", description: "Local-time year at alert end." },
+      { name: "end_local_hour", type: "string", description: "Local-time hour at alert end." },
+      { name: "raw", type: "json", description: "Full raw alert row (in case windy adds new fields). Use `raw->'fieldname'` to access them." },
     ],
     keyColumns: [
       { name: "query_lat", required: "required" },
@@ -1361,23 +1375,35 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       const lat = qNum(ctx.quals, "query_lat");
       const lon = qNum(ctx.quals, "query_lon");
       if (lat == null || lon == null) return;
+      // Server caps maxCount at 10. Clamp to avoid 400.
+      const userMax = qNum(ctx.quals, "max_count");
+      const maxCount = userMax != null ? Math.min(userMax, 10) : undefined;
       try {
         const c = getClient(ctx);
-        const rows: CapAlert[] | null = await c.capAlerts(lat, lon, {
-          maxCount: qNum(ctx.quals, "max_count"),
-        });
+        const rows: CapAlert[] | null = await c.capAlerts(lat, lon, { maxCount });
         for (const a of rows ?? []) {
           yield {
             query_lat: lat, query_lon: lon,
-            id: a.id, sender: a.sender, sent: a.sent,
-            status: a.status, msg_type: a.msgType, scope: a.scope,
-            category: a.info?.category, event: a.info?.event,
-            urgency: a.info?.urgency, severity: a.info?.severity,
-            certainty: a.info?.certainty,
-            effective: a.info?.effective, expires: a.info?.expires,
-            headline: a.info?.headline,
-            description: a.info?.description,
-            instruction: a.info?.instruction,
+            id: a.id,
+            start_ms: a.start,
+            start: isoFromMs(a.start),
+            end_ms: a.end,
+            end: isoFromMs(a.end),
+            type: a.type,
+            severity: a.severity,
+            event: a.event,
+            headline: a.headline,
+            start_local_weekday: a.startLocal?.weekday,
+            start_local_day: a.startLocal?.day,
+            start_local_month: a.startLocal?.month,
+            start_local_year: a.startLocal?.year,
+            start_local_hour: a.startLocal?.hour,
+            end_local_weekday: a.endLocal?.weekday,
+            end_local_day: a.endLocal?.day,
+            end_local_month: a.endLocal?.month,
+            end_local_year: a.endLocal?.year,
+            end_local_hour: a.endLocal?.hour,
+            raw: jsonOrUndef(a),
           };
         }
       } catch (e) {
@@ -1421,7 +1447,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
   // ── windy_webcams_near ─────────────────────────────────────────────────
   dl.registerTable("windy_webcams_near", {
     description:
-      "Webcams near a coordinate — one row per cam, with current and last-daylight image URLs. Use for visual ground truth (\"what does it actually look like there?\"). For full detail of a single cam join `id` into `windy_webcam`.",
+      "Webcams near a coord — one row per cam, with current + last-daylight image URLs. Use for visual ground truth. Join `id` into `windy_webcam` for full detail.",
     columns: [
       { name: "query_lat", type: "number", description: "Latitude passed in WHERE — echoed for joins. Decimal degrees." },
       { name: "query_lon", type: "number", description: "Longitude passed in WHERE — echoed for joins. Decimal degrees." },
@@ -1533,11 +1559,11 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       "Webcam text search by name / location. Use when the user names a place (\"Eiffel Tower\", \"Big Sur\") rather than a coord. Optionally bias by `lat`/`lon`.",
     columns: [
       { name: "query", type: "string", description: "Free-text query passed in WHERE — echoed." },
-      { name: "id", type: "string", description: "Stable identifier for the entity in this row." },
+      { name: "id", type: "string", description: "Result id (windy place id when type=`city`/`country`; webcam numeric id when type=`webcam`)." },
       { name: "lat", type: "number", description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N)." },
       { name: "lon", type: "number", description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E)." },
       { name: "title", type: "string", description: "Display title — human-readable label." },
-      { name: "type", type: "string", description: "Entity kind (varies by table — see the table description for valid values)." },
+      { name: "type", type: "string", description: "Match category. For webcam search typically `webcam` (also `city` when the search resolves to a place containing webcams)." },
       { name: "cc", type: "string", description: "ISO 3166-1 alpha-2 country code, lowercase (e.g. `il`, `us`, `de`)." },
       { name: "country", type: "string", description: "Country display name in the user's `lang`." },
       { name: "webcam_id", type: "string", description: "Webcam numeric id (as string); populated when the match is a webcam." },
@@ -1580,7 +1606,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       { name: "iata", type: "string", description: "IATA 3-letter airport code (e.g. `TLV`). Null for airports without commercial service." },
       { name: "subtype", type: "string", description: "Airport classification. One of: `large_airport`, `medium_airport`, `small_airport`, `heliport`, `seaplane_base`." },
       { name: "name", type: "string", description: "Airport name (e.g. \"Ben Gurion International Airport\")." },
-      { name: "source", type: "string", description: "Original publisher/aggregator of the measurement (server-defined; e.g. `openaq`, `eea`, `airnow`)." },
+      { name: "source", type: "string", description: "Upstream airport-database source (server-defined; typically `our_airports`)." },
       { name: "home_link", type: "string", description: "Airport's official website URL, if known. Null otherwise." },
       { name: "wikipedia_link", type: "string", description: "Wikipedia article URL for the airport, if known. Null otherwise." },
       { name: "keywords", type: "string", description: "Search-keyword aliases (former names, abbreviations). Comma-separated." },
@@ -1628,7 +1654,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       { name: "runway_id", type: "number", description: "OurAirports numeric runway id (unique across the global runway database)." },
       { name: "closed", type: "boolean", description: "True if the runway is permanently closed/decommissioned." },
       { name: "lighted", type: "boolean", description: "True if the runway has edge / approach lighting (night-capable)." },
-      { name: "surface", type: "string", description: "Runway surface code. `ASP` = asphalt, `CON` = concrete, `GRS` = grass, `GRE` = gravel, `WTR` = water, `SND` = sand, `TUR` = turf." },
+      { name: "surface", type: "string", description: "Runway surface — values are NOT well-normalized (mix of 3-letter, 4-letter, and full-word codes; capitalization varies). Phase 4b observed: `ASP` / `ASPH` (asphalt), `PEM` (permeable asphalt), `ASPH-G` (asphalt with grass overrun), `CON` (concrete), `Grass`, `WATER`. Match with `LIKE` or normalize before filtering." },
       { name: "he_ident", type: "string", description: "High-end runway identifier (e.g. `09L`, `27R`)." },
       { name: "le_ident", type: "string", description: "Low-end runway identifier (e.g. `27R`, the opposite end of `09L`)." },
       { name: "length_ft", type: "number", description: "Runway length, feet. Meters ≈ length_ft × 0.3048." },
@@ -1686,10 +1712,10 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       { name: "fullname", type: "string", description: "User's full display name as set on the account. May be empty." },
       { name: "email", type: "string", description: "Verified email address on the windy account." },
       { name: "user_id", type: "number", description: "Numeric windy user id. Stable across logins. Available in JWT claims as `userID`." },
-      { name: "subscription", type: "string", description: "Top-level subscription label. One of: `premium`, `free`." },
-      { name: "subscription_tier", type: "string", description: "Subscription tier. Same vocabulary as `subscription`: `premium`, `free`." },
-      { name: "subscription_status", type: "string", description: "Subscription state. One of: `active`, `inactive`, `trialing`." },
-      { name: "subscription_platform", type: "string", description: "Billing platform. One of: `fastspring`, `apple`, `google`, `stripe`." },
+      { name: "subscription", type: "string", description: "Top-level subscription label. Phase 4b observed: `premium`. `free` is the implicit complement when null/missing." },
+      { name: "subscription_tier", type: "string", description: "Subscription tier — same vocabulary as `subscription`. Phase 4b observed: `premium`." },
+      { name: "subscription_status", type: "string", description: "Subscription state. Phase 4b observed: `active`. Other values likely (e.g. `inactive`, `cancelled`, `trialing`) — sample lapsed accounts to verify." },
+      { name: "subscription_platform", type: "string", description: "Billing platform. Phase 4b observed: `fastspring`. App-store subscribers likely report `apple` / `google` — sample to verify." },
       { name: "subscription_expires_ms", type: "number", description: "Subscription expiry, unix milliseconds UTC." },
     ],
     async *list(ctx) {
@@ -1719,12 +1745,12 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
     description:
       "Coordinates the user has bookmarked in the windy app. Requires auth. Use to drive batch forecasts for places the user cares about (join lat/lon into `windy_forecast_point` or `windy_forecast_now`).",
     columns: [
-      { name: "id", type: "string", description: "Stable identifier for the entity in this row." },
+      { name: "id", type: "string", description: "Server-assigned favourite id (opaque string; stable for the bookmark's lifetime). Pass to runline `account.updateFavourite` / `account.deleteFavourite`." },
       { name: "updated_ms", type: "number", description: "Server-side last-modified, unix milliseconds UTC." },
       { name: "lat", type: "number", description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N)." },
       { name: "lon", type: "number", description: "Longitude, decimal degrees, WGS-84. Range −180..180 (positive = E)." },
       { name: "title", type: "string", description: "Display title — human-readable label." },
-      { name: "type", type: "string", description: "Entity kind (varies by table — see the table description for valid values)." },
+      { name: "type", type: "string", description: "Favourite kind. Typically `fav` (the only value the windy client currently writes)." },
       { name: "version", type: "string", description: "Schema version of the favourite/alert payload as published by the windy client. Used by sync clients to detect format changes." },
       { name: "key", type: "string", description: "Composite `lat/lon` key the windy SDK uses for client-side deduplication." },
       { name: "user_id", type: "string", description: "Owning user id (string form; same value as `windy_account.user_id` cast to text)." },
@@ -1768,9 +1794,9 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
   // ── windy_user_alerts (auth) ──────────────────────────────────────────
   dl.registerTable("windy_user_alerts", {
     description:
-      "Threshold-style weather alarms the user has configured (e.g. \"wind > 10 m/s at home\"). Requires auth. For one alert by id use `windy_user_alert`. For triggered alerts in effect now use `windy_alerts_live`.",
+      "Threshold weather alarms the user has configured (e.g. wind > 10 m/s at home). Requires auth. For one by id use `windy_user_alert`; for currently-firing alerts use `windy_alerts_live`.",
     columns: [
-      { name: "id", type: "string", description: "Stable identifier for the entity in this row." },
+      { name: "id", type: "string", description: "User-alert id (opaque server-assigned string). Pass to runline `account.userAlert` / `account.deleteUserAlert`." },
       { name: "updated_ms", type: "number", description: "Server-side last-modified, unix milliseconds UTC." },
       { name: "store_ts_ms", type: "number", description: "When the alert was last persisted to storage, unix milliseconds UTC. Differs from `updated_ms` after offline edits sync up." },
       { name: "lat", type: "number", description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N)." },
@@ -1815,7 +1841,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
     description:
       "One user alert by id (single row). Requires auth. Use after `windy_user_alerts` to inspect the full condition tree.",
     columns: [
-      { name: "id", type: "string", description: "Stable identifier for the entity in this row." },
+      { name: "id", type: "string", description: "User-alert id (opaque server-assigned string). Pass to runline `account.userAlert` / `account.deleteUserAlert`." },
       { name: "updated_ms", type: "number", description: "Server-side last-modified, unix milliseconds UTC." },
       { name: "store_ts_ms", type: "number", description: "When the alert was last persisted to storage, unix milliseconds UTC. Differs from `updated_ms` after offline edits sync up." },
       { name: "lat", type: "number", description: "Latitude, decimal degrees, WGS-84. Range −90..90 (positive = N)." },
