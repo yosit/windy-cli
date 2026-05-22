@@ -67,6 +67,14 @@ import {
 } from './session';
 
 const APP_VERSION = '50.0.3';
+
+/**
+ * Maps user-facing model names (used by `/forecast/point/...`) to the
+ * lower-level run ids the manifest endpoint expects.
+ */
+const MANIFEST_MODEL_ALIASES: Record<string, string> = {
+  ecmwf: 'ecmwf-hres',
+};
 const APP_ACCEPT_HEADER = 'application/json binary/hcacaf$indf4a2';
 
 const NODE_HOST = 'node.windy.com';
@@ -347,7 +355,12 @@ export class WindyClient {
     model: string = 'ecmwf-hres',
     premium = true,
   ): Promise<unknown> {
-    return this.request(`/metadata/v1.0/forecast/${model}/minifest.json`, {
+    // The forecast point endpoint accepts user-facing model names like `ecmwf`
+    // and `gfs`, but the manifest endpoint requires the lower-level run id
+    // (e.g. `ecmwf-hres`). Map the common aliases so callers can use the same
+    // model name everywhere.
+    const resolved = MANIFEST_MODEL_ALIASES[model] ?? model;
+    return this.request(`/metadata/v1.0/forecast/${resolved}/minifest.json`, {
       qs: { premium: premium ? 'true' : undefined },
     });
   }
@@ -411,9 +424,21 @@ export class WindyClient {
     );
   }
 
-  /** Nearby tide stations. */
-  async nearbyTides(lat: number, lon: number): Promise<unknown> {
-    return this.request(`/pois/v2/tides/${fmt(lat)}/${fmt(lon)}`);
+  /**
+   * Nearby tide stations. Returns `[]` when the upstream endpoint has no
+   * stations near the coord (it answers with a 404 instead of an empty list).
+   * For an actual tide-height forecast at any coordinate use `tides()`.
+   */
+  async nearbyTides(lat: number, lon: number): Promise<unknown[]> {
+    try {
+      const r = await this.request<unknown>(`/pois/v2/tides/${fmt(lat)}/${fmt(lon)}`);
+      if (Array.isArray(r)) return r;
+      const pois = (r as { pois?: unknown[] } | null)?.pois;
+      return Array.isArray(pois) ? pois : [];
+    } catch (e) {
+      if (e instanceof WindyAPIError && e.status === 404) return [];
+      throw e;
+    }
   }
 
   /** Air-quality POI detail (latest measurement). */

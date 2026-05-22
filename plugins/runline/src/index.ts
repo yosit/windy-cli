@@ -48,6 +48,15 @@ function bool(v: unknown): boolean | undefined {
   return typeof v === "boolean" ? v : undefined;
 }
 
+// Module-level client cache. Without this, each action call constructs a
+// fresh WindyClient with no token, and the first node.windy.com request
+// triggers a /api/info bootstrap. A batch of sanity-check calls then burns
+// through the persistent 8/24h login-throttle budget. Caching by connection
+// config lets the JWT minted on the first call be reused by all later calls
+// in the same process.
+const clientCache = new Map<string, WindyClient>();
+let autoUid: string | undefined;
+
 function getClient(ctx: Ctx): WindyClient {
   const cfg = ctx.connection.config;
   const token = str(cfg.token);
@@ -56,7 +65,14 @@ function getClient(ctx: Ctx): WindyClient {
   const proxy = str(cfg.proxy);
   if (proxy && !process.env.WINDY_PROXY) process.env.WINDY_PROXY = proxy;
 
-  const uid = str(cfg.uid) ?? randomUUID();
+  const uid = str(cfg.uid) ?? (autoUid ??= randomUUID());
+  const country = str(cfg.country);
+  const lang = str(cfg.lang);
+  const key = JSON.stringify({ token, accountSid, uid, country, lang });
+
+  const cached = clientCache.get(key);
+  if (cached) return cached;
+
   const session: PersistedSession = { uid };
   if (token) session.token = token;
   if (accountSid) session.accountSid = accountSid;
@@ -64,10 +80,12 @@ function getClient(ctx: Ctx): WindyClient {
   const opts: ClientOptions = {
     session,
     ephemeral: true,
-    country: str(cfg.country),
-    lang: str(cfg.lang),
+    country,
+    lang,
   };
-  return new WindyClient(opts);
+  const c = new WindyClient(opts);
+  clientCache.set(key, c);
+  return c;
 }
 
 async function run<T>(fn: () => Promise<T>): Promise<T> {
@@ -272,7 +290,7 @@ export default function windy(rl: RunlinePluginAPI) {
       model: {
         type: "string",
         required: false,
-        description: "Model identifier as it appears in tile URLs. Defaults to `ecmwf-hres`. Other examples: `gfs`, `icon-global`, `hrrr-conus`, `arome-france`. See MODEL_CATALOG in @yosit/windy-skill types for the full list.",
+        description: "Model identifier (manifest run id). Defaults to `ecmwf-hres`. Accepts the user-facing alias `ecmwf` and maps it to `ecmwf-hres`. Other examples: `gfs`, `icon-global`, `hrrr-conus`, `arome-france`. See MODEL_CATALOG in @yosit/windy-skill types for the full list.",
         default: "ecmwf-hres",
       },
       premium: { type: "boolean", required: false, description: "If true, request premium-tier reftimes (faster refresh cadence). Default true. Pass false to see only free-tier runs.", default: true },

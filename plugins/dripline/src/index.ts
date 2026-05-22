@@ -89,23 +89,41 @@ function qBool(q: Qual[], c: string): boolean | undefined { return bool(qVal(q, 
 
 // ── Client construction ───────────────────────────────────────────────────
 
+// Module-level client cache. Without this, each table query constructs a
+// fresh WindyClient with no token, and the first node.windy.com request
+// triggers a /api/info bootstrap — quickly exhausting the persistent 8/24h
+// login-throttle budget across a batch of sanity-check queries. Caching by
+// connection config lets the JWT from the first call be reused by all later
+// calls in the same process.
+const clientCache = new Map<string, WindyClient>();
+let autoUid: string | undefined;
+
 function getClient(ctx: QueryContext): WindyClient {
   const cfg = ctx.connection?.config ?? {};
   const token = str(cfg.token);
   const accountSid = str(cfg.accountSid);
   const proxy = str(cfg.proxy);
   if (proxy && !process.env.WINDY_PROXY) process.env.WINDY_PROXY = proxy;
-  const uid = str(cfg.uid) ?? randomUUID();
+  const uid = str(cfg.uid) ?? (autoUid ??= randomUUID());
+  const country = str(cfg.country);
+  const lang = str(cfg.lang);
+  const key = JSON.stringify({ token, accountSid, uid, country, lang });
+
+  const cached = clientCache.get(key);
+  if (cached) return cached;
+
   const session: PersistedSession = { uid };
   if (token) session.token = token;
   if (accountSid) session.accountSid = accountSid;
   const opts: ClientOptions = {
     session,
     ephemeral: true,
-    country: str(cfg.country),
-    lang: str(cfg.lang),
+    country,
+    lang,
   };
-  return new WindyClient(opts);
+  const c = new WindyClient(opts);
+  clientCache.set(key, c);
+  return c;
 }
 
 // ── Misc helpers ──────────────────────────────────────────────────────────
@@ -126,6 +144,18 @@ function logErr(dl: DriplinePluginAPI, table: string, e: unknown): void {
   } else {
     dl.log.warn(`${table}: ${(e as Error)?.message ?? String(e)}`);
   }
+}
+
+/**
+ * Used by tables where an empty result is dangerous to confuse with a real
+ * upstream failure (e.g. forecast tables). Logs the error so it shows up in
+ * plugin logs AND rethrows it so the SQL caller sees a query error rather
+ * than silent 0 rows.
+ */
+function failTable(dl: DriplinePluginAPI, table: string, e: unknown): never {
+  logErr(dl, table, e);
+  if (e instanceof Error) throw e;
+  throw new Error(`${table}: ${String(e)}`);
 }
 
 // Wind u/v → meteorological FROM-direction degrees (0..360)
@@ -288,7 +318,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
           };
         }
       } catch (e) {
-        logErr(dl, "windy_forecast_point", e);
+        failTable(dl, "windy_forecast_point", e);
       }
     },
   });
@@ -351,7 +381,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
           };
         }
       } catch (e) {
-        logErr(dl, "windy_forecast_summary", e);
+        failTable(dl, "windy_forecast_summary", e);
       }
     },
   });
@@ -395,6 +425,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
         const r = await c.pointForecast(lat, lon, {
           model: qStr(ctx.quals, "model"),
           refTime: qStr(ctx.quals, "ref_time"),
+          includeNow: true,
         });
         const h = r.header;
         yield {
@@ -414,7 +445,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
           header_raw: jsonOrUndef(h),
         };
       } catch (e) {
-        logErr(dl, "windy_forecast_now", e);
+        failTable(dl, "windy_forecast_now", e);
       }
     },
   });
@@ -494,7 +525,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
           }
         }
       } catch (e) {
-        logErr(dl, "windy_forecast_sounding", e);
+        failTable(dl, "windy_forecast_sounding", e);
       }
     },
   });
@@ -620,7 +651,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
           }
         }
       } catch (e) {
-        logErr(dl, "windy_forecast_meteogram", e);
+        failTable(dl, "windy_forecast_meteogram", e);
       }
     },
   });
@@ -688,7 +719,7 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
           };
         }
       } catch (e) {
-        logErr(dl, "windy_forecast_air_quality", e);
+        failTable(dl, "windy_forecast_air_quality", e);
       }
     },
   });

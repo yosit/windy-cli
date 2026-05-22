@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { WindyClient } from '../src/client';
+import { describe, it, expect, vi } from 'vitest';
+import { WindyClient, WindyAPIError } from '../src/client';
 import { decodeJWT } from '../src/session';
 
 describe('WindyClient', () => {
@@ -29,6 +29,46 @@ describe('WindyClient', () => {
     expect(url).toMatch(/c=32\.080%2C34\.780/);
     expect(url).toMatch(/z=10/);
     expect(url).toMatch(/size=640/);
+  });
+
+  it('modelManifest aliases user-facing `ecmwf` to `ecmwf-hres`', async () => {
+    const c = new WindyClient({ session: { uid: 'test-uid' }, ephemeral: true });
+    const spy = vi
+      .spyOn(c as unknown as { request: (p: string, o?: unknown) => Promise<unknown> }, 'request')
+      .mockResolvedValue({} as never);
+    await c.modelManifest('ecmwf');
+    expect(spy).toHaveBeenCalledWith(
+      '/metadata/v1.0/forecast/ecmwf-hres/minifest.json',
+      expect.anything(),
+    );
+    spy.mockRestore();
+  });
+
+  it('modelManifest leaves non-aliased model names alone', async () => {
+    const c = new WindyClient({ session: { uid: 'test-uid' }, ephemeral: true });
+    const spy = vi
+      .spyOn(c as unknown as { request: (p: string, o?: unknown) => Promise<unknown> }, 'request')
+      .mockResolvedValue({} as never);
+    await c.modelManifest('gfs');
+    expect(spy).toHaveBeenCalledWith(
+      '/metadata/v1.0/forecast/gfs/minifest.json',
+      expect.anything(),
+    );
+    spy.mockRestore();
+  });
+
+  it('nearbyTides returns [] on upstream 404 instead of throwing', async () => {
+    const c = new WindyClient({ session: { uid: 'test-uid' }, ephemeral: true });
+    vi.spyOn(c as unknown as { request: (p: string) => Promise<unknown> }, 'request')
+      .mockRejectedValue(new WindyAPIError(404, 'HTTP 404', '{}'));
+    await expect(c.nearbyTides(37.7442, 23.4283)).resolves.toEqual([]);
+  });
+
+  it('nearbyTides rethrows non-404 errors', async () => {
+    const c = new WindyClient({ session: { uid: 'test-uid' }, ephemeral: true });
+    vi.spyOn(c as unknown as { request: (p: string) => Promise<unknown> }, 'request')
+      .mockRejectedValue(new WindyAPIError(500, 'HTTP 500', '{}'));
+    await expect(c.nearbyTides(37.7442, 23.4283)).rejects.toThrow(/500/);
   });
 
   it('widgetImageUrl encodes radar/satellite params', () => {
